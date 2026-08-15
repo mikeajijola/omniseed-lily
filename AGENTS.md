@@ -1,10 +1,10 @@
-# Working on the OmniSeed EVE Provider
+# Working on Lily
 
-- This package implements only the canonical `agents` primitive-family boundary.
-- EVE is a replaceable runtime provider. It is not Lily, Company Stewardship, or company state.
-- Bootstrap inputs are company reference, organisational agent identity, and authenticated access to OmniSeed.
-- Agent turns must use governed OmniSeed operations. Never add direct GitHub or deployment-provider mutation.
-- Never print credentials or include them in observations/evidence.
-- Requested, configured, connected, healthy, and semantically operational are separate facts.
-- Stdout is reserved for JSON-RPC responses; diagnostics go to stderr.
-- Run `npm test` before proposing a change.
+- Lily is a replaceable organisational actor, not a primitive family or Provider.
+- Company Stewardship belongs to OmniSeed and must remain independent of Lily.
+- EVE and the selected model are replaceable runtime implementation details.
+- Do not place company facts or authority in static instructions.
+- Lily may inspect and propose only through governed OmniSeed operations.
+- Never add direct GitHub, deployment Provider, approval, apply, or self-escalation paths.
+- Never expose credentials in client state, output, observations, or evidence.
+- Run `npm test` and `npm run build:runtime` before proposing a change.
