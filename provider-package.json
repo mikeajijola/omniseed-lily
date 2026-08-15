@@ -1,0 +1,12 @@
+{
+  "manifestVersion": "1.0",
+  "id": "eve_agent_runtime",
+  "version": "0.1.0-alpha.0",
+  "engineCompatibility": "omniseed.provider.protocol/1.0",
+  "primitiveFamilies": ["agents"],
+  "operations": ["agent.semantic_turn"],
+  "configurationSchema": "./provider-configuration.schema.json",
+  "observationTypes": ["eve_agent_runtime_state"],
+  "evidenceTypes": ["eve_agent_runtime_health", "eve_agent_semantic_turn"],
+  "permissions": ["omniseed.operation.invoke"]
+}

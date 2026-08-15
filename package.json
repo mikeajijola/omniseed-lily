@@ -1,0 +1,16 @@
+{
+  "name": "@omniseed/provider-eve-reference",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "Replaceable EVE implementation of OmniSeed's agents primitive-family contract.",
+  "scripts": {
+    "test": "python3 -m unittest discover -s test -p 'test_*.py'"
+  },
+  "files": [
+    "provider",
+    "provider-package.json",
+    "provider-configuration.schema.json",
+    "README.md"
+  ],
+  "engines": { "node": ">=22" }
+}
