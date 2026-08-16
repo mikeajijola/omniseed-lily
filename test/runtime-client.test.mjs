@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { loadBootstrap, OmniSeedOperationClient, OmniSeedClientError } from "../agent/lib/omniseed-client.mjs";
+import { loadDeploymentMetadata, runtimeHealth, runtimeInfo } from "../agent/lib/runtime-metadata.mjs";
 
 const env = {
   OMNISEED_COMPANY_REF: "omniseed_ecosystem",
@@ -79,4 +80,19 @@ test("agent instructions contain no static ecosystem identity or repository fact
   const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
   assert.doesNotMatch(instructions, /omniseed_ecosystem|mikeajijola\/omniseed-ecosystem-company|Lily is/);
   assert.match(instructions, /inspect the company first/);
+});
+
+test("deployment metadata reports immutable runtime identity without credentials or embedded company facts", () => {
+  const deployment = { ...env, OMNISEED_ENVIRONMENT: "production", OMNISEED_SOURCE_REPOSITORY: "example/lily", OMNISEED_SOURCE_COMMIT_SHA: "a".repeat(40), LILY_RUNTIME_OBSERVATION_TOKEN: "observation-secret" };
+  assert.deepEqual(runtimeHealth(deployment), { ok: true, status: "healthy" });
+  assert.deepEqual(runtimeInfo(deployment), { companyRef: "omniseed_ecosystem", agentIdentity: "lily", environment: "production", source: { repository: "example/lily", commitSha: "a".repeat(40) }, agent: { framework: "eve" } });
+  assert.doesNotMatch(JSON.stringify(runtimeInfo(deployment)), /secret-value|observation-secret/);
+  assert.throws(() => loadDeploymentMetadata({ ...deployment, OMNISEED_SOURCE_COMMIT_SHA: "main" }), /full commit SHA/);
+});
+
+test("Vercel build contract is deterministic and contains no credential values", async () => {
+  const contract = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(contract.buildCommand, "npm run build:runtime");
+  assert.equal(contract.outputDirectory, ".output");
+  assert.doesNotMatch(JSON.stringify(contract), /TOKEN|SECRET|omniseed_ecosystem/);
 });
