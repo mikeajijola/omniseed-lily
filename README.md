@@ -2,7 +2,7 @@
 
 Lily is OmniSeed's first-party reference company steward application. Lily is an organisational actor selected by company desired state, not an OmniSeed primitive family, Provider, model, or mandatory subsystem.
 
-This application currently uses EVE for semantic execution. The company selects the `eve_agent_runtime` Provider for its `agents` primitive family independently of selecting Lily as the participant in its stewardship realisation. Replacing EVE must not replace Lily's organisational identity; replacing Lily must not change the stewardship capability.
+This application currently uses Vercel's Eve framework for semantic execution. The intended trace is `Steward OmniSeed Ecosystem → Lily → Agent primitive → implementation/framework: Eve → Provider: Vercel → selected Vercel runtime/model/services`. Eve is not a Provider. Replacing Eve must not replace Lily's organisational identity; replacing Lily must not change the stewardship capability. See the authoritative [Provider semantics](https://github.com/mikeajijola/omniseed-ecosystem/blob/main/docs/provider-semantics.md).
 
 Lily bootstraps from company reference, agent identity, authenticated OmniSeed endpoint, and a credential environment reference. She resolves company facts and authority through governed OmniSeed operations. The application has no GitHub, Vercel, approval, apply, or direct Provider mutation path.
 
