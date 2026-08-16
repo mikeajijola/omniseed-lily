@@ -8,7 +8,6 @@
     "build:runtime": "eve build"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.31",
     "eve": "^0.29.5"
   },
   "files": [
