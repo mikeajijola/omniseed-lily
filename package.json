@@ -16,5 +16,5 @@
     "README.md",
     "vercel.json"
   ],
-  "engines": { "node": ">=22" }
+  "engines": { "node": ">=24" }
 }
