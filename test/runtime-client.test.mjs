@@ -74,6 +74,8 @@ test("production EVE channel has no anonymous or local-development authenticator
   assert.doesNotMatch(source, /\blocalDev\s*\(/);
   assert.match(source, /verifyJwtHmac/);
   assert.match(source, /company_ref/);
+  assert.match(source, /OMNISEED_SESSION_CREDENTIAL_ENV/);
+  assert.doesNotMatch(source, /process\.env\.LILY_SESSION_JWT_SECRET/);
 });
 
 test("agent instructions contain no static ecosystem identity or repository facts", async () => {
