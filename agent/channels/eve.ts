@@ -9,14 +9,15 @@ import { loadBootstrap } from "../lib/omniseed-client.mjs";
 
 const companyJwt: AuthFn<Request> = withAuthChallenges(async (request) => {
   const bootstrap = loadBootstrap();
-  const secret = process.env.LILY_SESSION_JWT_SECRET;
+  const credentialReference = process.env.OMNISEED_SESSION_CREDENTIAL_ENV;
+  const secret = credentialReference ? process.env[credentialReference] : undefined;
   if (!secret) return null;
   const result = await verifyJwtHmac(
     extractBearerToken(request.headers.get("authorization")),
     {
       algorithm: "HS256",
-      audiences: [process.env.LILY_SESSION_JWT_AUDIENCE ?? "omniseed-lily"],
-      issuer: process.env.LILY_SESSION_JWT_ISSUER ?? "omniseed",
+      audiences: [process.env.OMNISEED_SESSION_JWT_AUDIENCE ?? "omniseed-lily"],
+      issuer: process.env.OMNISEED_SESSION_JWT_ISSUER ?? "omniseed",
       secret,
       claims: { company_ref: [bootstrap.companyRef] },
     },
