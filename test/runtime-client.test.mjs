@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { loadBootstrap, OmniSeedOperationClient, OmniSeedClientError } from "../agent/lib/omniseed-client.mjs";
 import { loadDeploymentMetadata, runtimeHealth, runtimeInfo } from "../agent/lib/runtime-metadata.mjs";
+import { projectCompanyInspection } from "../agent/lib/company-projection.mjs";
 
 const env = {
   OMNISEED_COMPANY_REF: "omniseed_ecosystem",
@@ -97,4 +98,28 @@ test("Vercel build contract is deterministic and contains no credential values",
   assert.equal(contract.buildCommand, "npm run build:runtime");
   assert.equal(contract.outputDirectory, ".output");
   assert.doesNotMatch(JSON.stringify(contract), /TOKEN|SECRET|omniseed_ecosystem/);
+});
+
+test("Agent company inspection is a bounded projection of ordinary OmniSeed state", () => {
+  const largePlan = { id: "plan_1", payload: "x".repeat(100_000) };
+  const registry = {
+    company: { id: "company_1", name: "Company One" },
+    instance: { desiredRevision: "a".repeat(40), observedStateRevision: 7 },
+    stewardship: { capability: { id: "steward", name: "Steward", state: "realised", realisations: [{ id: "primary" }] }, realisation: { id: "primary", participants: [{ resource: "lily", family: "agents", provider: "vercel", desired: { id: "lily", spec: { implementation: { framework: "eve" } } }, deployed: largePlan, observed: { status: "healthy", evidence: [{ id: "e1", type: "runtime_health", snapshot: largePlan }] } }] } },
+    capabilities: [{ id: "operate", name: "Operate", state: "partial", requirements: [{ id: "interface", primitiveFamily: "connectors", covered: false }], realisations: [{ id: "os" }], resolution: largePlan }],
+    realisations: [{ id: "os", capability: "operate", participants: [{ resource: "os", family: "connectors", provider: "vercel", deployed: largePlan }] }],
+    providers: [{ family: "connectors", providerId: "vercel", state: "connected" }],
+    providerGaps: [], operations: [{ id: "inspect_company", description: "Inspect", currentAvailability: "available", handler: largePlan }],
+    evidence: Array.from({ length: 30 }, (_, index) => ({ id: `e${index}`, type: "observation", snapshot: largePlan })),
+    history: Array.from({ length: 30 }, (_, index) => ({ type: "observed", at: index })),
+    plans: [largePlan], definitionHash: "hash",
+  };
+  const projection = projectCompanyInspection(registry);
+  assert.equal(projection.capabilities[0].state, "partial");
+  assert.equal(projection.realisations[0].participants[0].provider, "vercel");
+  assert.equal(projection.evidence.length, 20);
+  assert.equal(projection.activity.length, 20);
+  assert.equal("plans" in projection, false);
+  assert.equal("deployed" in projection.realisations[0].participants[0], false);
+  assert.ok(JSON.stringify(projection).length < 20_000);
 });
