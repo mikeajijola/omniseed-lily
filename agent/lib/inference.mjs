@@ -2,7 +2,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 export function inferenceConfiguration(env = process.env) {
   const provider = env.LILY_INFERENCE_PROVIDER ?? "google";
-  const model = env.LILY_MODEL;
+  const model = env.LILY_MODEL ?? "gemini-2.5-flash";
   if (provider !== "google") throw new Error("Lily requires a declared supported inference Provider.");
   if (!/^gemini-[A-Za-z0-9._-]+$/.test(model ?? "")) throw new Error("Lily requires an exact declared Gemini model identifier.");
   return { provider, model };
