@@ -4,7 +4,9 @@ Lily is OmniSeed's first-party reference company steward application. Lily is an
 
 This application currently uses Vercel's Eve framework for semantic execution. The intended trace is `Steward OmniSeed Ecosystem → Lily → Agent primitive → implementation/framework: Eve → Provider: Vercel → selected Vercel runtime/model/services`. Eve is not a Provider. Replacing Eve must not replace Lily's organisational identity; replacing Lily must not change the stewardship capability. See the authoritative [Provider semantics](https://github.com/mikeajijola/omniseed-ecosystem/blob/main/docs/provider-semantics.md).
 
-Lily bootstraps from company reference, agent identity, authenticated OmniSeed endpoint, and a credential environment reference. She resolves company facts and authority through governed OmniSeed operations. The application has no GitHub, Vercel, approval, apply, or direct Provider mutation path.
+Lily bootstraps from company reference, agent identity, authenticated OmniSeed endpoint, and a credential environment reference. She resolves company facts and authority through governed OmniSeed operations. The application has no GitHub, Vercel, approval, or direct Provider mutation path.
+
+Lily runs as Eve's durable semantic Agent loop rather than a stateless chatbot. OmniSeed OS preserves the Eve session and stream cursor in Engine-owned company work state, records a safe Activity projection, and resumes the same run after independent company approvals. Lily may invoke an apply or Provider-mediated merge operation only when OmniSeed verifies the exact independently approved plan or proposal; she cannot approve or expand her own authority.
 
 The engine transport contract is:
 
