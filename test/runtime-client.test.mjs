@@ -77,6 +77,18 @@ test("ordinary proposals remain governed OmniSeed operation calls", async () => 
   assert.deepEqual(result, { id: "change_1", status: "proposed" });
 });
 
+test("Company Change preview is an ordinary read-only OmniSeed operation", async () => {
+  let request;
+  const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
+    request = { url, init };
+    return { ok: true, json: async () => ({ ok: true, result: { proposalId: "change_1", validation: { valid: true } } }) };
+  }});
+  const result = await client.invoke("preview_company_change", { proposalId: "change_1" });
+  assert.equal(result.validation.valid, true);
+  assert.match(request.url, /\/operations\/preview_company_change:invoke$/);
+  assert.deepEqual(JSON.parse(request.init.body).input, { proposalId: "change_1" });
+});
+
 test("engine denial is preserved and never converted into success", async () => {
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async () => ({ ok: false, json: async () => ({ ok: false, code: "authorization_denied", error: "Missing permission" }) }) });
   await assert.rejects(client.invoke("inspect_company", {}), (error) => error.code === "authorization_denied");
