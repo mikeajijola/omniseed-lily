@@ -1,7 +1,8 @@
 import { defineAgent } from "eve";
+import { resolveInferenceModel } from "./lib/inference.mjs";
 
 export default defineAgent({
-  model: process.env.LILY_MODEL ?? "google/gemini-3.6-flash",
+  model: resolveInferenceModel(),
   reasoning: "medium",
   limits: {
     maxOutputTokensPerSession: 12_000,

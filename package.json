@@ -1,6 +1,6 @@
 {
   "name": "@omniseed/lily",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": false,
   "description": "First-party replaceable company steward application for OmniSeed, currently implemented with EVE.",
   "scripts": {
@@ -8,6 +8,7 @@
     "build:runtime": "eve build"
   },
   "dependencies": {
+    "@ai-sdk/google": "4.0.51",
     "eve": "^0.29.5"
   },
   "files": [
@@ -15,5 +16,7 @@
     "README.md",
     "vercel.json"
   ],
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }
