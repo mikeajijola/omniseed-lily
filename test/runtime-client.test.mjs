@@ -40,11 +40,24 @@ test("client invokes an existing OmniSeed operation with server-derived authorit
   assert.equal(request.init.headers.authorization, "Bearer secret-value");
 });
 
-test("client cannot invoke approval, apply, or arbitrary Provider operations", async () => {
+test("client cannot invoke approval, authority, or arbitrary Provider operations", async () => {
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async () => assert.fail("network must not be called") });
-  for (const operation of ["approve_company_change", "apply_company_change", "github.api", "provider.mutate"]) {
+  for (const operation of ["approve_company_change", "approve_plan", "governance.mutate", "github.api", "provider.mutate"]) {
     await assert.rejects(client.invoke(operation, {}), (error) => error.code === "operation_not_allowed");
   }
+});
+
+test("client can request governed apply and merge but supplies no Provider credential or authority", async () => {
+  const requests = [];
+  const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
+    requests.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ ok: true, result: { status: "accepted" } }) };
+  } });
+  await client.invoke("apply_company_change", { proposalId: "change_1" });
+  await client.invoke("merge_company_change", { proposalId: "change_1" });
+  assert.equal(requests.length, 2);
+  assert.equal(requests.some(item => JSON.stringify(item).includes("permissions")), false);
+  assert.equal(requests.some(item => /github|vercel/i.test(JSON.stringify(item.body))), false);
 });
 
 test("Lily self-escalation is denied before network access", async () => {
@@ -119,7 +132,7 @@ test("Agent company inspection is a bounded projection of ordinary OmniSeed stat
   assert.equal(projection.realisations[0].participants[0].provider, "vercel");
   assert.equal(projection.evidence.length, 20);
   assert.equal(projection.activity.length, 20);
-  assert.equal("plans" in projection, false);
+  assert.deepEqual(projection.plans[0].actions, []);
   assert.equal("deployed" in projection.realisations[0].participants[0], false);
   assert.ok(JSON.stringify(projection).length < 20_000);
 });

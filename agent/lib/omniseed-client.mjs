@@ -3,6 +3,15 @@ const OPERATION_IDS = new Set([
   "get_capability",
   "propose_company_change",
   "inspect_company_change",
+  "inspect_realisation",
+  "inspect_provider_binding",
+  "list_activity",
+  "generate_plan",
+  "get_plan",
+  "observe_company",
+  "apply_plan",
+  "apply_company_change",
+  "merge_company_change",
 ]);
 
 export class OmniSeedClientError extends Error {

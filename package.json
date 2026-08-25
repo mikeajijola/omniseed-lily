@@ -1,6 +1,6 @@
 {
   "name": "@omniseed/lily",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "private": false,
   "description": "First-party replaceable company steward application for OmniSeed, currently implemented with EVE.",
   "scripts": {

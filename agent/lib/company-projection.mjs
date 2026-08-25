@@ -40,6 +40,16 @@ export function projectCompanyInspection(registry) {
         baseRevision: proposal.submission.baseRevision,
       },
     })),
+    plans: (registry.plans ?? []).slice(-10).map(plan => ({
+      id: plan.id,
+      hash: plan.hash,
+      status: plan.status,
+      actions: (plan.actions ?? []).map(action => ({ id: action.id, action: action.action, family: action.family, resourceId: action.resourceId, provider: action.provider })),
+      gaps: plan.gaps ?? [],
+      providerGaps: plan.providerGaps ?? [],
+      approval: plan.approval && { actorId: plan.approval.actorId, planHash: plan.approval.planHash, approvedActionIds: plan.approval.approvedActionIds, approvedAt: plan.approval.approvedAt },
+    })),
+    workRuns: (registry.workRuns ?? []).slice(-10),
     activity: (registry.history ?? []).slice(-20),
     definitionHash: registry.definitionHash,
   };
