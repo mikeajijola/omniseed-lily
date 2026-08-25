@@ -3,6 +3,7 @@ const OPERATION_IDS = new Set([
   "get_capability",
   "propose_company_change",
   "inspect_company_change",
+  "preview_company_change",
   "inspect_realisation",
   "inspect_provider_binding",
   "list_activity",
