@@ -17,6 +17,10 @@ test("Lily resolves a direct external model from declared inference bootstrap", 
   assert.equal(model.modelId, "gemini-2.5-flash");
 });
 
+test("the immutable Google adapter has a deterministic build fallback", () => {
+  assert.deepEqual(inferenceConfiguration({}), { provider: "google", model: "gemini-2.5-flash" });
+});
+
 test("inference bootstrap fails closed for undeclared Providers and models", () => {
   assert.throws(() => inferenceConfiguration({ ...configured, LILY_INFERENCE_PROVIDER: "eve" }), /supported inference Provider/);
   assert.throws(() => inferenceConfiguration({ ...configured, LILY_MODEL: "google\/gemini" }), /model identifier/);
