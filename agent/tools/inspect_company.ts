@@ -1,11 +1,14 @@
-import { defineTool } from "eve/tools";
+import { defineDynamic, defineTool } from "eve/tools";
 import { operationClient } from "../lib/omniseed-client.mjs";
+import { shouldExposeOperation } from "../lib/execution-profile.mjs";
 import { projectCompanyInspection } from "../lib/company-projection.mjs";
 
-export default defineTool({
+export default defineDynamic({ events: { "step.started": (_event, ctx) =>
+  shouldExposeOperation(ctx.messages, "inspect_company") ? defineTool({
   description: "Inspect the bound company's desired state, observed state, evidence, capabilities, realisations, Providers, authority, and activity.",
   inputSchema: { type: "object", additionalProperties: false, properties: {} },
   async execute() {
     return projectCompanyInspection(await operationClient().invoke("inspect_company", {}));
   },
-});
+  }) : null,
+} });
