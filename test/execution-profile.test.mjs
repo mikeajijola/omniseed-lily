@@ -7,7 +7,9 @@ const user = content => ({ role: "user", content });
 const tool = name => ({ role: "tool", content: [{ type: "tool-result", toolName: name, result: {} }] });
 
 test("conversation deterministically exposes no governed operations", () => {
-  assert.equal(executionProfileFor("Hello!").name, "conversation");
+  for (const message of ["Hello!", "Hi there", "hey, how's it going", "thank you so much", "no worries"]) {
+    assert.equal(executionProfileFor(message).name, "conversation", message);
+  }
   assert.deepEqual(turnGuard([user("Hello!")], "inspect_company"), {
     profile: "conversation", limit: 0, governedCalls: 0, remaining: 0, allowed: false,
   });
@@ -35,16 +37,32 @@ test("a later user turn gets a fresh bound without discarding prior durable hist
   assert.equal(turnGuard(messages, "inspect_provider_binding").allowed, true);
 });
 
-test("every governed tool is guarded at Eve step resolution", async () => {
+test("Eve step resolution removes every governed tool from social turns", async () => {
   const toolsUrl = new URL("../agent/tools/", import.meta.url);
   const files = (await readdir(toolsUrl)).filter(file => file.endsWith(".ts"));
   assert.equal(files.length, 14);
   for (const file of files) {
-    const source = await readFile(new URL(file, toolsUrl), "utf8");
-    assert.match(source, /defineDynamic/);
-    assert.match(source, /"step\.started"/);
-    assert.match(source, /shouldExposeOperation\(ctx\.messages/);
+    const definition = (await import(new URL(file, toolsUrl))).default;
+    assert.equal(definition.kind, "eve:dynamic", file);
+    const resolve = definition.events["step.started"];
+    assert.equal(typeof resolve, "function", file);
+    assert.equal(await resolve({ type: "step.started" }, { messages: [user("Hi there")] }), null, file);
+    assert.equal(typeof (await resolve({ type: "step.started" }, { messages: [user("Fix the evidenced company gap")] }))?.execute, "function", file);
   }
+});
+
+test("Eve step resolution exposes only profile operations and enforces call bounds", async () => {
+  const inspectCompany = (await import("../agent/tools/inspect_company.ts")).default.events["step.started"];
+  const proposeChange = (await import("../agent/tools/propose_company_change.ts")).default.events["step.started"];
+  const event = { type: "step.started" };
+  const query = [user("What is the company status?")];
+
+  assert.equal(typeof (await inspectCompany(event, { messages: query })).execute, "function");
+  assert.equal(await proposeChange(event, { messages: query }), null);
+  assert.equal(await inspectCompany(event, { messages: [...query, tool("inspect_company"), tool("get_capability")] }), null);
+
+  const work = [user("Propose the evidenced company change")];
+  assert.equal(typeof (await proposeChange(event, { messages: work })).execute, "function");
 });
 
 test("Eve owns explicit durable session timing and output bounds", async () => {

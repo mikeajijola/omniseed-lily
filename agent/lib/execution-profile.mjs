@@ -1,4 +1,4 @@
-const SOCIAL = /^(?:hi|hello|hey|thanks|thank you|ok(?:ay)?|good (?:morning|afternoon|evening))[!.?\s]*$/i;
+const SOCIAL = /^(?:(?:hi|hello|hey)(?:\s+there)?(?:,?\s+how(?:'s| is) it going|,?\s+how are you)?|(?:thanks|thank you)(?:\s+(?:so|very)\s+much)?|ok(?:ay)?|no worries|you(?:'re| are) welcome|good (?:morning|afternoon|evening)|(?:good)?bye)[!.?,\s]*$/i;
 const DURABLE_WORK = /\b(?:generate|plan|apply|change|replace|create|delete|deploy|operate|set up|realise|realize|fix|reconcile|observe|propose|merge)\b/i;
 
 export const EXECUTION_PROFILES = Object.freeze({
