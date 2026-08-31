@@ -6,6 +6,7 @@ import {
   type AuthFn,
 } from "eve/channels/auth";
 import { loadBootstrap } from "../lib/omniseed-client.mjs";
+import { semanticProfile } from "../lib/semantic-profile.mjs";
 
 const companyJwt: AuthFn<Request> = withAuthChallenges(async (request) => {
   const bootstrap = loadBootstrap();
@@ -29,11 +30,13 @@ export default eveChannel({
   auth: [companyJwt],
   onMessage(ctx, message) {
     const bootstrap = loadBootstrap();
+    const profile = semanticProfile(message);
     return {
       auth: defaultEveAuth(ctx),
       context: [
         `Resolve organisational context through OmniSeed using companyRef=${bootstrap.companyRef} and agentIdentity=${bootstrap.identity}.`,
         `Authenticated caller=${ctx.eve.caller?.principalId ?? "unknown"}. User message: ${message}`,
+        `Execution profile=${profile.executionClass}; reasoning=${profile.reasoning}; maximum governed tool calls=${profile.maxToolCalls}. A zero limit forbids company inspection. Never exceed this limit; escalate explicitly to company_work when durable operational work is required.`,
       ],
     };
   },

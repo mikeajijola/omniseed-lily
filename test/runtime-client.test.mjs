@@ -108,6 +108,7 @@ test("agent instructions contain no static ecosystem identity or repository fact
   const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
   assert.doesNotMatch(instructions, /omniseed_ecosystem|mikeajijola\/omniseed-ecosystem-company|Lily is/);
   assert.match(instructions, /inspect the company first/);
+  assert.match(instructions, /Pure greetings.*without company inspection/);
 });
 
 test("agent instructions explicitly bootstrap the stable OmniSeed ontology", async () => {
