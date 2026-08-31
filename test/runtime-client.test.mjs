@@ -110,6 +110,26 @@ test("agent instructions contain no static ecosystem identity or repository fact
   assert.match(instructions, /inspect the company first/);
 });
 
+test("agent instructions explicitly bootstrap the stable OmniSeed ontology", async () => {
+  const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
+  for (const concept of ["Intent", "Desired state", "Observed state", "Drift", "Capability", "Requirement", "Realisation", "Primitive", "Provider", "Actor", "Interface", "Authority", "Evidence", "Company Change"]) {
+    assert.match(instructions, new RegExp(`\\*\\*${concept}\\*\\*`, "i"), `${concept} must be defined explicitly`);
+  }
+  assert.match(instructions, /supplying organisation boundary/i);
+  assert.match(instructions, /not inherently the CEO, founder, board, management team, company, or OmniSeed itself/i);
+  assert.match(instructions, /Intent → required Capability → desired state → observed state and evidence → gap or drift → authorised plan or Company Change → action → new observation and evidence → reconciliation/);
+});
+
+test("Eve ontology eval coverage includes text and multimodal cases", async () => {
+  const textEval = await readFile(new URL("../evals/ontology/text.eval.ts", import.meta.url), "utf8");
+  const multimodalEval = await readFile(new URL("../evals/ontology/multimodal.eval.ts", import.meta.url), "utf8");
+  const diagram = await readFile(new URL("../evals/ontology/operating-model.svg", import.meta.url), "utf8");
+  assert.match(textEval, /explainsOmniSeedOperatingModel/);
+  assert.match(multimodalEval, /sendFile/);
+  assert.match(multimodalEval, /image\/svg\+xml/);
+  assert.match(diagram, /Lily = one replaceable authorised Actor/);
+});
+
 test("deployment metadata reports immutable runtime identity without credentials or embedded company facts", () => {
   const deployment = { ...env, OMNISEED_ENVIRONMENT: "production", OMNISEED_SOURCE_REPOSITORY: "example/lily", OMNISEED_SOURCE_COMMIT_SHA: "a".repeat(40), LILY_RUNTIME_OBSERVATION_TOKEN: "observation-secret" };
   assert.deepEqual(runtimeHealth(deployment), { ok: true, status: "healthy" });

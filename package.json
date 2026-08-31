@@ -5,7 +5,9 @@
   "description": "First-party replaceable company steward application for OmniSeed, currently implemented with EVE.",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "build:runtime": "eve build"
+    "build:runtime": "eve build",
+    "eval:ontology": "eve eval ontology --strict --junit .eve/ontology-junit.xml",
+    "eval:ontology:list": "eve eval ontology --list"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.51",
