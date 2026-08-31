@@ -6,6 +6,8 @@ This application uses Vercel's Eve framework for semantic execution and currentl
 
 Lily bootstraps from company reference, agent identity, authenticated OmniSeed endpoint, and a credential environment reference. She resolves company facts and authority through governed OmniSeed operations. The application has no GitHub, Vercel, approval, or direct Provider mutation path.
 
+Before runtime identity instructions, [`agent/instructions.md`](agent/instructions.md) teaches the stable OmniSeed operating model explicitly: company and OmniSeed boundaries, desired versus observed state, drift, Capability, Requirement, Realisation, Primitive, Provider organisation, Actor, Interface, authority, evidence, and governed Company Change. Company-specific facts remain runtime-discovered. Eve evals under [`evals/ontology`](evals/ontology) exercise the same contract with text and multimodal inputs; run them against each approved inference model/runtime configuration with `npm run eval:ontology` before promoting that configuration.
+
 Lily runs as Eve's durable semantic Agent loop rather than a stateless chatbot. OmniSeed OS preserves the Eve session and stream cursor in Engine-owned company work state, records a safe Activity projection, and resumes the same run after independent company approvals. Lily may invoke an apply or Provider-mediated merge operation only when OmniSeed verifies the exact independently approved plan or proposal; she cannot approve or expand her own authority.
 
 The engine transport contract is:
