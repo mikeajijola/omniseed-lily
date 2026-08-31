@@ -6,6 +6,7 @@ import {
   type AuthFn,
 } from "eve/channels/auth";
 import { loadBootstrap } from "../lib/omniseed-client.mjs";
+import { executionProfileFor, messageText } from "../lib/execution-profile.mjs";
 
 const companyJwt: AuthFn<Request> = withAuthChallenges(async (request) => {
   const bootstrap = loadBootstrap();
@@ -29,11 +30,13 @@ export default eveChannel({
   auth: [companyJwt],
   onMessage(ctx, message) {
     const bootstrap = loadBootstrap();
+    const profile = executionProfileFor(messageText({ content: message }));
     return {
       auth: defaultEveAuth(ctx),
       context: [
         `Resolve organisational context through OmniSeed using companyRef=${bootstrap.companyRef} and agentIdentity=${bootstrap.identity}.`,
         `Authenticated caller=${ctx.eve.caller?.principalId ?? "unknown"}. User message: ${message}`,
+        `Enforced turn profile=${profile.name}; governed operation limit=${profile.governedToolLimit}. Tool availability is recalculated from durable Eve message history before every model step.`,
       ],
     };
   },

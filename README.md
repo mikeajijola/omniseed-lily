@@ -10,6 +10,23 @@ Before runtime identity instructions, [`agent/instructions.md`](agent/instructio
 
 Lily runs as Eve's durable semantic Agent loop rather than a stateless chatbot. OmniSeed OS preserves the Eve session and stream cursor in Engine-owned company work state, records a safe Activity projection, and resumes the same run after independent company approvals. Lily may invoke an apply or Provider-mediated merge operation only when OmniSeed verifies the exact independently approved plan or proposal; she cannot approve or expand her own authority.
 
+## Enforced execution bounds and timing
+
+Eve applies a deterministic profile before every model step, using the latest user message and the tool results already present in durable message history. A social turn exposes no governed tools. A company query exposes only the read allowlist and at most two governed calls. Company work exposes the authored governed operations and at most eight calls. Exhaustion removes the tools from the next model step; it does not grant authority, bypass Engine checks, end the session, or discard the continuation. The Agent also has Eve-owned limits of 12,000 provider-reported output tokens and a 24-hour absolute durable-session lifetime. Eve permits the call that crosses a token limit to settle and prompts for continuation before another model call; a session deadline lets an active turn settle and does not delete stored session data.
+
+Deterministic regression traces (generated from the same pure guard used by the dynamic tools) are:
+
+```text
+before: "Hello"                         -> all 14 governed tools visible (static tool manifest)
+after:  "Hello"                         -> conversation, 0/0 calls, no governed tools
+before: "What is the company status?"   -> all 14 governed tools visible, no call bound
+after:  "What is the company status?"   -> company_query, 0/2 calls, read allowlist only
+after:  + inspect_company + get_capability -> company_query, 2/2 calls, no governed tools
+after:  "Propose the evidenced change"  -> company_work, 0/8 calls, governed tools available
+```
+
+These are policy traces, not production latency measurements. This repository has no deployed Engine endpoint, inference credential, browser submission timestamp, or Provider telemetry, so it cannot honestly report end-to-end milliseconds or token savings. A deployed before/after measurement must keep browser-to-Engine, Eve/model, and OmniSeed-operation spans separate and must record only safe durations and aggregate usage—not prompts, credentials, raw tool payloads, or company facts. Static reasoning remains `medium`: Eve 0.29.5 configures reasoning at Agent scope, and lowering it globally would also change durable company work.
+
 The engine transport contract is:
 
 ```text

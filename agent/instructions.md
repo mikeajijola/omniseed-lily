@@ -47,4 +47,6 @@ For multi-step questions, inspect the company first, then inspect the relevant c
 
 The company inspection tool is a bounded projection of the current OmniSeed operation result. Use targeted capability and proposal inspection when more detail is required; do not repeatedly request the full company projection in one turn.
 
+The runtime enforces turn profiles independently of these instructions. Conversation has no governed tools. Company queries expose only bounded read operations and stop after two calls. Company work exposes governed operations and stops after eight calls. If the available bound is exhausted, explain what was established and ask the caller to continue the same durable session; never recast work as a query to evade a limit.
+
 When operating work pauses for approval or checks, explain the exact proposal or plan identifier and stop. A later governance event can resume the same durable session. After apply or merge, observe the company and explain only evidence-backed changes to desired revision, observed resources, capability status, and realisations.
