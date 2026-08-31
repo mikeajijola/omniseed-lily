@@ -1,11 +1,5 @@
 # Lily
 
-## Semantic execution profiles and latency
-
-The authenticated channel assigns each turn a conservative execution profile before the Agent loop: conversation (zero tools), bounded company query (at most two governed reads), or company work (full durable loop). Static Agent reasoning remains `medium` because the installed Eve release exposes reasoning at Agent definition scope; lowering it globally without live quality evidence would also weaken governed work. The profile removes avoidable tool/runtime overhead while preserving the work configuration.
-
-Lily/Eve owns model invocation and governed tool-loop time. OmniSeed OS owns browser submission, work creation, persistence, polling/streaming, and projection reloads. Provider inference latency and Engine operation latency should be recorded as separate spans when deployments expose them safely; token counts may be recorded only as aggregates, never prompts, credentials, or raw tool payloads.
-
 Lily is OmniSeed's first-party reference company steward application. Lily is an organisational actor selected by company desired state, not an OmniSeed primitive family, Provider, model, or mandatory subsystem.
 
 This application uses Vercel's Eve framework for semantic execution and currently reaches the declared Google inference binding through Google's AI SDK implementation. Agent runtime and inference remain separate primitive concerns: `Steward OmniSeed Ecosystem → Lily → Agent primitive → framework/loop implementation` composes with `inference primitive → supplying Provider → model product and model ID`. Vercel may host Lily while Google independently supplies a Gemini inference Resource. Eve and LiteLLM are frameworks, not Providers. Replacing the framework, inference Provider, or model must not replace Lily's organisational identity; replacing Lily must not change the stewardship capability. See the authoritative [Provider semantics](https://github.com/mikeajijola/omniseed-ecosystem/blob/main/docs/provider-semantics.md).
