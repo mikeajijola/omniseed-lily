@@ -36,7 +36,7 @@ export default eveChannel({
       context: [
         `Resolve organisational context through OmniSeed using companyRef=${bootstrap.companyRef} and agentIdentity=${bootstrap.identity}.`,
         `Authenticated caller=${ctx.eve.caller?.principalId ?? "unknown"}. User message: ${message}`,
-        `Enforced turn profile=${profile.name}; governed operation limit=${profile.governedToolLimit}. Tool availability is recalculated from durable Eve message history before every model step.`,
+        `Runtime safety policy=${profile.name}; governed operation limit=${profile.governedToolLimit}. Interpret intent from the durable Eve conversation. Tool availability is recalculated from durable message history before every model step.`,
       ],
     };
   },
