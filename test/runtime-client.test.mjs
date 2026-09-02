@@ -109,6 +109,17 @@ test("agent instructions explicitly bootstrap the stable OmniSeed ontology", asy
   assert.match(instructions, /Intent → required Capability → desired state → observed state and evidence → gap or drift → authorised plan or Company Change → action → new observation and evidence → reconciliation/);
 });
 
+test("autonomous stewardship remains evidence-backed and proposal-only", async () => {
+  const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
+  assert.match(instructions, /autonomous, unattended, or time-bounded stewardship as intent, never as authority conveyed by conversation/i);
+  assert.match(instructions, /do not invent command syntax/i);
+  assert.match(instructions, /A proposal does not activate a profile/i);
+  for (const boundary of ["pause", "disablement", "expiry", "denial", "protected-change", "independent approval", "checks"]) {
+    assert.match(instructions, new RegExp(boundary, "i"), boundary);
+  }
+  assert.match(instructions, /Never approve Lily's own work, invoke an apply or merge path, expand Lily's authority/i);
+});
+
 test("Eve ontology eval coverage includes text and multimodal cases", async () => {
   const textEval = await readFile(new URL("../evals/ontology/text.eval.ts", import.meta.url), "utf8");
   const multimodalEval = await readFile(new URL("../evals/ontology/multimodal.eval.ts", import.meta.url), "utf8");

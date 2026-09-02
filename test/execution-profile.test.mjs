@@ -56,6 +56,17 @@ test("routing contains no keyword or regular-expression classifier", async () =>
   assert.match(source, /String\(text\)\.trim\(\)/);
 });
 
+test("autonomous stewardship language does not create a privileged turn profile", () => {
+  for (const message of ["YOLO mode", "Run autonomously for 24 hours", "Pause autonomous stewardship", "Is unattended work active?"]) {
+    assert.equal(executionProfileFor(message), EXECUTION_PROFILES.semantic_turn, message);
+    assert.equal(turnGuard([user(message)], "inspect_company").allowed, true, message);
+    assert.equal(turnGuard([user(message)], "propose_company_change").allowed, true, message);
+    for (const operation of ["apply_company_change", "apply_plan", "merge_company_change", "approve_company_change", "authority.mutate"]) {
+      assert.equal(turnGuard([user(message)], operation).allowed, false, `${message}: ${operation}`);
+    }
+  }
+});
+
 test("Eve tool manifest contains only the safe semantic operation surface", async () => {
   const toolsUrl = new URL("../agent/tools/", import.meta.url);
   const files = (await readdir(toolsUrl)).filter(file => file.endsWith(".ts")).sort();
