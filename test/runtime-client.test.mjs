@@ -40,24 +40,11 @@ test("client invokes an existing OmniSeed operation with server-derived authorit
   assert.equal(request.init.headers.authorization, "Bearer secret-value");
 });
 
-test("client cannot invoke approval, authority, or arbitrary Provider operations", async () => {
+test("client cannot invoke apply, merge, approval, authority, or Provider operations", async () => {
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async () => assert.fail("network must not be called") });
-  for (const operation of ["approve_company_change", "approve_plan", "governance.mutate", "github.api", "provider.mutate"]) {
+  for (const operation of ["apply_company_change", "apply_plan", "merge_company_change", "approve_company_change", "approve_plan", "governance.mutate", "github.api", "provider.mutate", "authority.mutate"]) {
     await assert.rejects(client.invoke(operation, {}), (error) => error.code === "operation_not_allowed");
   }
-});
-
-test("client can request governed apply and merge but supplies no Provider credential or authority", async () => {
-  const requests = [];
-  const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
-    requests.push({ url, body: JSON.parse(init.body) });
-    return { ok: true, json: async () => ({ ok: true, result: { status: "accepted" } }) };
-  } });
-  await client.invoke("apply_company_change", { proposalId: "change_1" });
-  await client.invoke("merge_company_change", { proposalId: "change_1" });
-  assert.equal(requests.length, 2);
-  assert.equal(requests.some(item => JSON.stringify(item).includes("permissions")), false);
-  assert.equal(requests.some(item => /github|vercel/i.test(JSON.stringify(item.body))), false);
 });
 
 test("Lily self-escalation is denied before network access", async () => {
@@ -108,7 +95,8 @@ test("agent instructions contain no static ecosystem identity or repository fact
   const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
   assert.doesNotMatch(instructions, /omniseed_ecosystem|mikeajijola\/omniseed-ecosystem-company|Lily is/);
   assert.match(instructions, /inspect the company first/);
-  assert.match(instructions, /runtime classifies.*social-only.*without company inspection/);
+  assert.match(instructions, /natural semantic reasoning/i);
+  assert.match(instructions, /never available as Lily tools/i);
 });
 
 test("agent instructions explicitly bootstrap the stable OmniSeed ontology", async () => {
@@ -119,6 +107,17 @@ test("agent instructions explicitly bootstrap the stable OmniSeed ontology", asy
   assert.match(instructions, /supplying organisation boundary/i);
   assert.match(instructions, /not inherently the CEO, founder, board, management team, company, or OmniSeed itself/i);
   assert.match(instructions, /Intent → required Capability → desired state → observed state and evidence → gap or drift → authorised plan or Company Change → action → new observation and evidence → reconciliation/);
+});
+
+test("autonomous stewardship remains evidence-backed and proposal-only", async () => {
+  const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
+  assert.match(instructions, /autonomous, unattended, or time-bounded stewardship as intent, never as authority conveyed by conversation/i);
+  assert.match(instructions, /do not invent command syntax/i);
+  assert.match(instructions, /A proposal does not activate a profile/i);
+  for (const boundary of ["pause", "disablement", "expiry", "denial", "protected-change", "independent approval", "checks"]) {
+    assert.match(instructions, new RegExp(boundary, "i"), boundary);
+  }
+  assert.match(instructions, /Never approve Lily's own work, invoke an apply or merge path, expand Lily's authority/i);
 });
 
 test("Eve ontology eval coverage includes text and multimodal cases", async () => {
