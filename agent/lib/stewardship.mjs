@@ -1,28 +1,94 @@
-const CONTROL = /^\s*(?:yolo\s+)?(status|pause|off|on)(?:\s+for\s+(\d+)\s*(hours?|days?))?\s*$/i;
+const HOUR_MS = 60 * 60 * 1_000;
+const DAY_MS = 24 * HOUR_MS;
 
-export function parseStewardshipControl(text, now = new Date()) {
-  const match = CONTROL.exec(String(text ?? ""));
-  if (!match) return null;
-  const action = match[1].toLowerCase();
-  if (action === "on") {
-    const amount = Number(match[2]), unit = match[3]?.toLowerCase();
-    if (!Number.isInteger(amount) || amount < 1) return { action: "invalid", code: "bounded_duration_required" };
-    const milliseconds = amount * (unit.startsWith("day") ? 86_400_000 : 3_600_000);
-    return { action: "enable", expiresAt: new Date(now.getTime() + milliseconds).toISOString() };
+const CONTROL_OPERATIONS = Object.freeze({
+  status: "get_stewardship_status",
+  enable: "request_stewardship_enablement",
+  pause: "request_stewardship_pause",
+  disable: "request_stewardship_disablement",
+});
+
+export function stewardshipControlIntent(action, options = {}, now = new Date()) {
+  if (!(action in CONTROL_OPERATIONS)) return { action: "invalid", code: "unsupported_stewardship_control" };
+  if (action !== "enable") return { action, operation: CONTROL_OPERATIONS[action], input: {} };
+  const amount = Number(options.amount);
+  const unit = options.unit;
+  if (!Number.isInteger(amount) || amount < 1 || !["hour", "day"].includes(unit)) {
+    return { action: "invalid", code: "bounded_duration_required" };
   }
-  return { action: action === "off" ? "disable" : action };
+  const durationMs = amount * (unit === "day" ? DAY_MS : HOUR_MS);
+  const requestedExpiry = new Date(now.getTime() + durationMs);
+  if (!Number.isSafeInteger(durationMs) || !Number.isFinite(requestedExpiry.getTime())) {
+    return { action: "invalid", code: "bounded_duration_required" };
+  }
+  return { action, operation: CONTROL_OPERATIONS[action], input: {
+    durationSeconds: durationMs / 1_000,
+    requestedExpiresAt: requestedExpiry.toISOString(),
+  } };
 }
 
-export function nextStewardshipOperation({ profile, work }) {
-  if (!profile || profile.state !== "enabled") return { operation: null, code: `stewardship_${profile?.state ?? "not_declared"}` };
-  if (work.denial) return { operation: null, code: work.denial.code, details: work.denial.details };
-  if (!work.proposalId) return { operation: "propose_company_change" };
-  if (!work.previewed) return { operation: "preview_company_change" };
-  if (!work.submitted) return { operation: "apply_company_change" };
-  if (!work.independentApproval || !work.checksSuccessful) return { operation: null, code: "waiting_for_independent_review" };
-  if (!work.merged) return { operation: "merge_company_change" };
-  if (!work.reconciled) return { operation: "generate_plan" };
-  if (!work.applied) return { operation: "apply_plan" };
-  if (!work.observed) return { operation: "observe_company" };
-  return { operation: null, code: "stewardship_completed" };
+export async function invokeStewardshipControl(client, intent) {
+  if (!intent?.operation || intent.action === "invalid") return { status: "paused", code: intent?.code ?? "invalid_stewardship_control" };
+  return client.invoke(intent.operation, intent.input);
+}
+
+const WORK_KIND_PRIORITY = Object.freeze({ failed_operation: 0, drift: 1, gap: 2, owner_objective: 3 });
+
+export function prioritizeStewardshipWork(items = []) {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const leftPriority = WORK_KIND_PRIORITY[left.item.kind] ?? Number.MAX_SAFE_INTEGER;
+      const rightPriority = WORK_KIND_PRIORITY[right.item.kind] ?? Number.MAX_SAFE_INTEGER;
+      return leftPriority - rightPriority || (right.item.severity ?? 0) - (left.item.severity ?? 0) || left.index - right.index;
+    })
+    .map(({ item }) => item);
+}
+
+function pause(code, details) {
+  return Object.freeze({ operation: null, code, ...(details === undefined ? {} : { details }) });
+}
+
+function profileBoundary(profile, work, now) {
+  if (!profile) return pause("stewardship_not_declared");
+  if (profile.killSwitch === true || profile.state === "disabled") return pause("stewardship_disabled");
+  if (profile.state === "paused") return pause("stewardship_paused");
+  if (profile.state !== "enabled") return pause(`stewardship_${profile.state ?? "not_declared"}`);
+  const expiry = Date.parse(profile.expiresAt);
+  if (!Number.isFinite(expiry) || expiry <= now.getTime()) return pause("stewardship_expired", { expiresAt: profile.expiresAt });
+  if (work.denial) return pause(work.denial.code ?? "stewardship_denied", work.denial.details);
+  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork;
+  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount ?? 0;
+  if (!work.sessionId && Number.isInteger(limit) && active >= limit) return pause("stewardship_concurrency_exhausted", { active, limit });
+  return null;
+}
+
+export function nextStewardshipOperation({ profile, work = {}, repair, now = new Date() }) {
+  const boundary = profileBoundary(profile, work, now);
+  if (boundary) return boundary;
+  if (!work.proposalId) {
+    if (!work.proposal) return pause("stewardship_work_input_required");
+    return { operation: "propose_company_change", input: work.proposal };
+  }
+  if (!work.previewed) return { operation: "preview_company_change", input: { proposalId: work.proposalId } };
+  if (!work.sessionId) return pause("durable_session_required", { proposalId: work.proposalId });
+  if (!work.submissionRequested) return { operation: "request_company_change_submission", input: { proposalId: work.proposalId, sessionId: work.sessionId } };
+  if (work.review?.status === "failed") {
+    if (!repair) return pause("stewardship_review_failed", { proposalId: work.proposalId, findings: work.review.findings });
+    return { operation: "propose_company_change", input: { ...repair, supersedesProposalId: work.proposalId } };
+  }
+  if (work.review?.status !== "approved" || work.checks?.status !== "successful") return pause("waiting_for_independent_review", { proposalId: work.proposalId });
+  if (!work.mergeRequested) return { operation: "request_company_change_merge", input: { proposalId: work.proposalId, sessionId: work.sessionId } };
+  if (!work.merged) return pause("waiting_for_governed_merge", { proposalId: work.proposalId });
+  if (!work.reconciliationRequested) return { operation: "request_reconciliation", input: { sessionId: work.sessionId, proposalId: work.proposalId } };
+  if (!work.reconciled) return pause("waiting_for_reconciliation", { proposalId: work.proposalId });
+  if (!work.observed) return { operation: "observe_company", input: {} };
+  return pause("stewardship_completed", { proposalId: work.proposalId, evidence: work.evidence ?? [] });
+}
+
+export async function runStewardshipStep({ client, profile, work, repair, now = new Date() }) {
+  const decision = nextStewardshipOperation({ profile, work, repair, now });
+  if (!decision.operation) return { status: "paused", ...decision };
+  const result = await client.invoke(decision.operation, decision.input);
+  return { status: "scheduled", operation: decision.operation, sessionId: work?.sessionId ?? result?.sessionId, result };
 }

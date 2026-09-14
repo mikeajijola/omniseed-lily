@@ -76,6 +76,18 @@ test("Company Change preview is an ordinary read-only OmniSeed operation", async
   assert.deepEqual(JSON.parse(request.init.body).input, { proposalId: "change_1" });
 });
 
+test("stewardship transitions are authenticated Engine requests, not direct merge or apply calls", async () => {
+  let request;
+  const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
+    request = { url, init };
+    return { ok: true, json: async () => ({ ok: true, result: { accepted: true, state: "waiting_for_merge" } }) };
+  }});
+  const result = await client.invoke("request_company_change_merge", { proposalId: "change_1", sessionId: "session_1" });
+  assert.equal(result.accepted, true);
+  assert.match(request.url, /\/operations\/request_company_change_merge:invoke$/);
+  assert.deepEqual(JSON.parse(request.init.body), { input: { proposalId: "change_1", sessionId: "session_1" }, actor: { actorId: "lily", actorType: "ai" } });
+});
+
 test("engine denial is preserved and never converted into success", async () => {
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async () => ({ ok: false, json: async () => ({ ok: false, code: "authorization_denied", error: "Missing permission" }) }) });
   await assert.rejects(client.invoke("inspect_company", {}), (error) => error.code === "authorization_denied");
