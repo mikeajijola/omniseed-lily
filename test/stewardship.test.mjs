@@ -7,6 +7,7 @@ const revision = "status-revision-1";
 const profile = { state: "enabled", expiresAt: "2026-09-02T00:00:00Z", limits: { maxConcurrentWork: 2 }, usage: { concurrentWork: 0 } };
 const proposal = { reason: "Close evidenced drift", evidence: ["e1"], patch: [{ op: "replace", path: "/metadata/name", value: "Company" }] };
 const claim = workIds => ({
+  revision,
   profile: { ...profile, usage: { concurrentWork: workIds.length } },
   claims: workIds.map((workId, index) => ({ workId, claimId: `claim-${index}`, leaseExpiresAt: "2026-09-01T00:05:00Z" })),
 });
@@ -79,7 +80,10 @@ test("runtime scheduler preserves the governed protected-category boundary", asy
     if (operation === "get_stewardship_status") {
       return { revision, profile: protectedProfile, work: [{ id: "secret", kind: "gap", category: "credentials", proposal }] };
     }
-    if (operation === "claim_stewardship_work") return { ...claim(input.workIds), profile: protectedProfile };
+    if (operation === "claim_stewardship_work") return {
+      ...claim(input.workIds),
+      profile: { ...protectedProfile, usage: { concurrentWork: input.workIds.length } },
+    };
     assert.fail("protected work reached a change operation");
   } };
   const result = await runGovernedStewardship({ client, now });
@@ -246,7 +250,7 @@ test("simultaneous ticks use atomic Engine claims to suppress duplicates", async
   const client = { invoke: async (operation, input) => {
     if (operation === "get_stewardship_status") return { revision, profile, work };
     if (operation === "claim_stewardship_work") {
-      if (owner) return { profile, claims: [] };
+      if (owner) return { revision, profile: { ...profile, usage: { concurrentWork: 1 } }, claims: [] };
       owner = input.workIds[0];
       await Promise.resolve();
       return claim(input.workIds);
@@ -281,6 +285,30 @@ test("claim denial or malformed and expired leases fail closed", async () => {
     } };
     const result = await runGovernedStewardship({ client, now });
     assert.equal(result.status, "paused");
+    assert.equal(scheduled, false);
+  }
+});
+
+test("claim-time revision or concurrency changes fail closed before scheduling", async () => {
+  const work = ["a", "b"].map((id, index, all) => ({
+    id, kind: "gap", proposal,
+    concurrency: { revision, independent: true, dependencies: [], conflicts: [], independentOf: all.filter(other => other !== id) },
+  }));
+  const invalidClaims = [
+    { ...claim(["a", "b"]), revision: "new-revision" },
+    { ...claim(["a", "b"]), profile: { ...profile, limits: { maxConcurrentWork: 1 }, usage: { concurrentWork: 1 } } },
+    { ...claim(["a", "b"]), profile: { ...profile, usage: { concurrentWork: 1 } } },
+  ];
+  for (const claimResponse of invalidClaims) {
+    let scheduled = false;
+    const client = { invoke: async (operation) => {
+      if (operation === "get_stewardship_status") return { revision, profile, work };
+      if (operation === "claim_stewardship_work") return claimResponse;
+      scheduled = true;
+    } };
+    const result = await runGovernedStewardship({ client, now });
+    assert.equal(result.code, "stewardship_claim_invalid");
+    assert.deepEqual(result.scheduled, []);
     assert.equal(scheduled, false);
   }
 });

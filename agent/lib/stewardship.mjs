@@ -166,8 +166,15 @@ function safelyConcurrentWork(work, revision, limit) {
   return selected.length ? selected : ordered.slice(0, 1);
 }
 
-function governedClaims(result, requestedIds, now) {
+function governedClaims(result, requestedIds, expectedRevision, now) {
   if (!result || !Array.isArray(result.claims)) throw new TypeError("claim_stewardship_work must return governed claims");
+  if (typeof result.revision !== "string" || result.revision !== expectedRevision) {
+    throw new TypeError("claim_stewardship_work returned claims for a different revision");
+  }
+  const concurrency = concurrencyState(result.profile);
+  if (concurrency.boundary || result.claims.length > concurrency.limit || result.claims.length > concurrency.active) {
+    throw new TypeError("claim_stewardship_work returned claims outside current concurrency capacity");
+  }
   const requested = new Set(requestedIds);
   const seen = new Set();
   const claims = new Map();
@@ -232,7 +239,7 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
   const claimBoundary = profileBoundary(claimedProfile, { claimId: "governed" }, now);
   if (claimBoundary) return { status: "paused", ...claimBoundary, scheduled: [] };
   let claims;
-  try { claims = governedClaims(claimResult, selected.map(work => work.id), now); }
+  try { claims = governedClaims(claimResult, selected.map(work => work.id), snapshot.revision, now); }
   catch { return { status: "paused", operation: null, code: "stewardship_claim_invalid", scheduled: [] }; }
   const claimed = selected.filter(work => claims.has(work.id));
   if (claimed.length === 0) return { status: "paused", operation: null, code: "stewardship_claim_unavailable", scheduled: [] };
