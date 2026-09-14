@@ -49,6 +49,15 @@ function pause(code, details) {
   return Object.freeze({ operation: null, code, ...(details === undefined ? {} : { details }) });
 }
 
+function concurrencyState(profile) {
+  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork;
+  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount;
+  if (!Number.isInteger(limit) || limit < 0 || !Number.isInteger(active) || active < 0 || active > limit) {
+    return { boundary: pause("stewardship_concurrency_invalid", { active, limit }) };
+  }
+  return { active, limit };
+}
+
 function profileBoundary(profile, work, now) {
   if (!profile) return pause("stewardship_not_declared");
   if (profile.killSwitch === true || profile.state === "disabled") return pause("stewardship_disabled");
@@ -57,9 +66,11 @@ function profileBoundary(profile, work, now) {
   const expiry = Date.parse(profile.expiresAt);
   if (!Number.isFinite(expiry) || expiry <= now.getTime()) return pause("stewardship_expired", { expiresAt: profile.expiresAt });
   if (work.denial) return pause(work.denial.code ?? "stewardship_denied", work.denial.details);
-  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork;
-  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount ?? 0;
-  if (!work.sessionId && Number.isInteger(limit) && active >= limit) return pause("stewardship_concurrency_exhausted", { active, limit });
+  const concurrency = concurrencyState(profile);
+  if (concurrency.boundary) return concurrency.boundary;
+  if (!work.sessionId && concurrency.active >= concurrency.limit) {
+    return pause("stewardship_concurrency_exhausted", { active: concurrency.active, limit: concurrency.limit });
+  }
   return null;
 }
 
@@ -115,9 +126,8 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
     return { status: "paused", ...boundary, scheduled: [] };
   }
 
-  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork ?? 1;
-  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount ?? 0;
-  const available = Number.isInteger(limit) ? Math.max(0, limit - active) : 0;
+  const { limit, active } = concurrencyState(profile);
+  const available = limit - active;
   let newWorkSlots = available;
   const selected = [];
   for (const work of prioritizeStewardshipWork(snapshot.work)) {

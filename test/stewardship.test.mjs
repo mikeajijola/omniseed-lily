@@ -121,6 +121,31 @@ test("runtime scheduler obeys Engine expiry, kill switch, owner pause, and concu
   }
 });
 
+test("runtime scheduler fails closed without valid Engine concurrency authority", async () => {
+  const proposalWork = [{ id: "new", kind: "gap", proposal }];
+  const invalidConcurrencyProfiles = [
+    { ...profile, limits: {}, usage: { concurrentWork: 0 } },
+    { ...profile, limits: { maxConcurrentWork: "2" }, usage: { concurrentWork: 0 } },
+    { ...profile, limits: { maxConcurrentWork: -1 }, usage: { concurrentWork: 0 } },
+    { ...profile, limits: { maxConcurrentWork: 2 }, usage: {} },
+    { ...profile, limits: { maxConcurrentWork: 2 }, usage: { concurrentWork: 0.5 } },
+    { ...profile, limits: { maxConcurrentWork: 2 }, usage: { concurrentWork: -1 } },
+    { ...profile, limits: { maxConcurrentWork: 1 }, usage: { concurrentWork: 2 } },
+  ];
+  for (const governedProfile of invalidConcurrencyProfiles) {
+    const calls = [];
+    const client = { invoke: async (operation) => {
+      calls.push(operation);
+      if (operation === "get_stewardship_status") return { profile: governedProfile, work: proposalWork };
+      assert.fail("scheduler ran work without valid concurrency authority");
+    } };
+    const result = await runGovernedStewardship({ client, now });
+    assert.equal(result.code, "stewardship_concurrency_invalid");
+    assert.deepEqual(result.scheduled, []);
+    assert.deepEqual(calls, ["get_stewardship_status"]);
+  }
+});
+
 test("runtime scheduler processes only declared independent concurrency", async () => {
   let running = 0, peak = 0;
   const work = Array.from({ length: 4 }, (_, index) => ({ id: `w${index}`, kind: "drift", proposal }));
