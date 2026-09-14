@@ -11,6 +11,7 @@ const OPERATION_IDS = new Set([
   "get_plan",
   "observe_company",
   "get_stewardship_status",
+  "claim_stewardship_work",
   "request_stewardship_enablement",
   "request_stewardship_pause",
   "request_stewardship_disablement",

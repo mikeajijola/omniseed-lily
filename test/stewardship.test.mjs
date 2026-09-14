@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { invokeStewardshipControl, nextStewardshipOperation, prioritizeStewardshipWork, runGovernedStewardship, runStewardshipStep, stewardshipControlIntent } from "../agent/lib/stewardship.mjs";
 
 const now = new Date("2026-09-01T00:00:00Z");
+const revision = "status-revision-1";
 const profile = { state: "enabled", expiresAt: "2026-09-02T00:00:00Z", limits: { maxConcurrentWork: 2 }, usage: { concurrentWork: 0 } };
 const proposal = { reason: "Close evidenced drift", evidence: ["e1"], patch: [{ op: "replace", path: "/metadata/name", value: "Company" }] };
+const claim = workIds => ({
+  profile: { ...profile, usage: { concurrentWork: workIds.length } },
+  claims: workIds.map((workId, index) => ({ workId, claimId: `claim-${index}`, leaseExpiresAt: "2026-09-01T00:05:00Z" })),
+});
 
 test("conversational meanings become authenticated governed control operations", async () => {
   assert.deepEqual(stewardshipControlIntent("enable", { amount: 24, unit: "hour" }, now), {
@@ -72,17 +77,18 @@ test("durable step resumes the same session and never performs more than one ope
 test("runtime scheduler discovers authority and resumes durable state from the Engine on every tick", async () => {
   const durable = { id: "work-1", kind: "drift", proposalId: "p", sessionId: "durable-1" };
   const snapshots = [
-    { profile, work: [{ ...durable }] },
-    { profile, work: [{ ...durable, previewed: true }] },
-    { profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" } }] },
-    { profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true }] },
-    { profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true, reconciliationRequested: true, reconciled: true }] },
-    { profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true, reconciliationRequested: true, reconciled: true, observed: true, evidence: ["observed-1"] }] },
+    { revision, profile, work: [{ ...durable }] },
+    { revision, profile, work: [{ ...durable, previewed: true }] },
+    { revision, profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" } }] },
+    { revision, profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true }] },
+    { revision, profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true, reconciliationRequested: true, reconciled: true }] },
+    { revision, profile, work: [{ ...durable, previewed: true, submissionRequested: true, review: { status: "approved" }, checks: { status: "successful" }, mergeRequested: true, merged: true, reconciliationRequested: true, reconciled: true, observed: true, evidence: ["observed-1"] }] },
   ];
   const calls = [];
   const client = { invoke: async (operation, input) => {
     calls.push({ operation, input });
     if (operation === "get_stewardship_status") return snapshots.shift();
+    if (operation === "claim_stewardship_work") return claim(input.workIds);
     return { accepted: true };
   } };
 
@@ -112,7 +118,7 @@ test("runtime scheduler obeys Engine expiry, kill switch, owner pause, and concu
     const calls = [];
     const client = { invoke: async (operation) => {
       calls.push(operation);
-      if (operation === "get_stewardship_status") return { profile: governedProfile, work: proposalWork };
+      if (operation === "get_stewardship_status") return { revision, profile: governedProfile, work: proposalWork };
       assert.fail("scheduler crossed a governed boundary");
     } };
     const result = await runGovernedStewardship({ client, now });
@@ -136,7 +142,7 @@ test("runtime scheduler fails closed without valid Engine concurrency authority"
     const calls = [];
     const client = { invoke: async (operation) => {
       calls.push(operation);
-      if (operation === "get_stewardship_status") return { profile: governedProfile, work: proposalWork };
+      if (operation === "get_stewardship_status") return { revision, profile: governedProfile, work: proposalWork };
       assert.fail("scheduler ran work without valid concurrency authority");
     } };
     const result = await runGovernedStewardship({ client, now });
@@ -146,12 +152,15 @@ test("runtime scheduler fails closed without valid Engine concurrency authority"
   }
 });
 
-test("runtime scheduler processes only declared independent concurrency", async () => {
+test("runtime scheduler processes only mutually declared, current independent concurrency", async () => {
   let running = 0, peak = 0;
-  const work = Array.from({ length: 4 }, (_, index) => ({ id: `w${index}`, kind: "drift", proposal }));
+  const work = Array.from({ length: 4 }, (_, index) => ({ id: `w${index}`, kind: "drift", proposal,
+    concurrency: { revision, independent: true, dependencies: [], conflicts: [], independentOf: Array.from({ length: 4 }, (_, other) => `w${other}`).filter(id => id !== `w${index}`) },
+  }));
   const calls = [];
-  const client = { invoke: async (operation) => {
-    if (operation === "get_stewardship_status") return { profile, work };
+  const client = { invoke: async (operation, input) => {
+    if (operation === "get_stewardship_status") return { revision, profile, work };
+    if (operation === "claim_stewardship_work") return claim(input.workIds);
     calls.push(operation);
     running += 1;
     peak = Math.max(peak, running);
@@ -171,10 +180,96 @@ test("runtime review repair is Engine-provided and remains a replacement proposa
   const calls = [];
   const client = { invoke: async (operation, input) => {
     calls.push({ operation, input });
-    if (operation === "get_stewardship_status") return { profile, work: [reviewed] };
+    if (operation === "get_stewardship_status") return { revision, profile, work: [reviewed] };
+    if (operation === "claim_stewardship_work") return claim(input.workIds);
     return { id: "p2", sessionId: "s1" };
   } };
   const result = await runGovernedStewardship({ client, now });
   assert.equal(result.scheduled[0].operation, "propose_company_change");
-  assert.deepEqual(calls[1].input, { ...repair, supersedesProposalId: "p1" });
+  assert.deepEqual(calls[2].input, { ...repair, supersedesProposalId: "p1" });
+});
+
+test("simultaneous ticks use atomic Engine claims to suppress duplicates", async () => {
+  const work = [{ id: "same", kind: "gap", proposal }];
+  let owner;
+  let scheduled = 0;
+  const client = { invoke: async (operation, input) => {
+    if (operation === "get_stewardship_status") return { revision, profile, work };
+    if (operation === "claim_stewardship_work") {
+      if (owner) return { profile, claims: [] };
+      owner = input.workIds[0];
+      await Promise.resolve();
+      return claim(input.workIds);
+    }
+    scheduled += 1;
+    return { accepted: true };
+  } };
+  const results = await Promise.all([
+    runGovernedStewardship({ client, now }),
+    runGovernedStewardship({ client, now }),
+  ]);
+  assert.equal(scheduled, 1);
+  assert.deepEqual(results.map(result => result.status).sort(), ["paused", "scheduled"]);
+  assert.equal(results.find(result => result.status === "paused").code, "stewardship_claim_unavailable");
+});
+
+test("claim denial or malformed and expired leases fail closed", async () => {
+  const work = [{ id: "w", kind: "gap", proposal }];
+  for (const claimResponse of [
+    Object.assign(new Error("denied"), { code: "claim_denied" }),
+    { profile, claims: [{ workId: "w", claimId: "c", leaseExpiresAt: now.toISOString() }] },
+    { profile, claims: [{ workId: "other", claimId: "c", leaseExpiresAt: "2026-09-01T00:05:00Z" }] },
+  ]) {
+    let scheduled = false;
+    const client = { invoke: async (operation) => {
+      if (operation === "get_stewardship_status") return { revision, profile, work };
+      if (operation === "claim_stewardship_work") {
+        if (claimResponse instanceof Error) throw claimResponse;
+        return claimResponse;
+      }
+      scheduled = true;
+    } };
+    const result = await runGovernedStewardship({ client, now });
+    assert.equal(result.status, "paused");
+    assert.equal(scheduled, false);
+  }
+});
+
+test("missing, stale, dependent, conflicting, or asymmetric evidence is never parallelized", async () => {
+  const evidence = (independentOf, extras = {}) => ({ revision, independent: true, dependencies: [], conflicts: [], independentOf, ...extras });
+  const cases = [
+    [{}, {}],
+    [{ concurrency: evidence(["b"], { revision: "stale" }) }, { concurrency: evidence(["a"], { revision: "stale" }) }],
+    [{ concurrency: evidence(["b"], { dependencies: ["b"], independentOf: [] }) }, { concurrency: evidence(["a"]) }],
+    [{ concurrency: evidence([], { conflicts: ["b"] }) }, { concurrency: evidence(["a"]) }],
+    [{ concurrency: evidence(["b"]) }, { concurrency: evidence([]) }],
+  ];
+  for (const [left, right] of cases) {
+    const claimedIds = [];
+    const client = { invoke: async (operation, input) => {
+      if (operation === "get_stewardship_status") return { revision, profile, work: [
+        { id: "a", kind: "gap", proposal, ...left }, { id: "b", kind: "gap", proposal, ...right },
+      ] };
+      if (operation === "claim_stewardship_work") {
+        claimedIds.push(...input.workIds);
+        return claim(input.workIds);
+      }
+      return { accepted: true };
+    } };
+    await runGovernedStewardship({ client, now });
+    assert.equal(claimedIds.length, 1);
+  }
+});
+
+test("disable race returned by atomic claim prevents every scheduled operation", async () => {
+  let scheduled = false;
+  const disabled = { ...profile, state: "disabled", killSwitch: true };
+  const client = { invoke: async (operation) => {
+    if (operation === "get_stewardship_status") return { revision, profile, work: [{ id: "w", kind: "gap", proposal }] };
+    if (operation === "claim_stewardship_work") return { profile: disabled, claims: [] };
+    scheduled = true;
+  } };
+  const result = await runGovernedStewardship({ client, now });
+  assert.equal(result.code, "stewardship_disabled");
+  assert.equal(scheduled, false);
 });

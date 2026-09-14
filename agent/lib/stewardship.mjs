@@ -68,7 +68,7 @@ function profileBoundary(profile, work, now) {
   if (work.denial) return pause(work.denial.code ?? "stewardship_denied", work.denial.details);
   const concurrency = concurrencyState(profile);
   if (concurrency.boundary) return concurrency.boundary;
-  if (!work.sessionId && concurrency.active >= concurrency.limit) {
+  if (!work.sessionId && !work.claimId && concurrency.active >= concurrency.limit) {
     return pause("stewardship_concurrency_exhausted", { active: concurrency.active, limit: concurrency.limit });
   }
   return null;
@@ -110,7 +110,61 @@ function governedSnapshot(result) {
   if (!profile || !Array.isArray(work)) {
     throw new TypeError("get_stewardship_status must return an Engine-governed profile and work array");
   }
-  return { profile, work };
+  if (typeof result.revision !== "string" || !result.revision) {
+    throw new TypeError("get_stewardship_status must return a durable revision for atomic claims");
+  }
+  return { profile, work, revision: result.revision };
+}
+
+function parallelEvidence(work, revision) {
+  const evidence = work?.concurrency;
+  if (!evidence || evidence.revision !== revision || evidence.independent !== true ||
+      !Array.isArray(evidence.dependencies) || !Array.isArray(evidence.conflicts) ||
+      !Array.isArray(evidence.independentOf)) return null;
+  const fields = [evidence.dependencies, evidence.conflicts, evidence.independentOf];
+  if (fields.some(values => values.some(value => typeof value !== "string" || !value)) ||
+      new Set(fields.flat()).size !== fields.flat().length || fields.flat().includes(work.id)) return null;
+  return evidence;
+}
+
+function safelyConcurrentWork(work, revision, limit) {
+  const ordered = prioritizeStewardshipWork(work);
+  if (limit <= 1 || ordered.length <= 1) return ordered.slice(0, Math.min(1, limit));
+  const selected = [];
+  for (const candidate of ordered) {
+    const evidence = parallelEvidence(candidate, revision);
+    if (!evidence) {
+      if (selected.length === 0) return [candidate];
+      continue;
+    }
+    const compatible = selected.every(other => {
+      const otherEvidence = parallelEvidence(other, revision);
+      return otherEvidence &&
+        evidence.independentOf.includes(other.id) && otherEvidence.independentOf.includes(candidate.id) &&
+        !evidence.dependencies.includes(other.id) && !otherEvidence.dependencies.includes(candidate.id) &&
+        !evidence.conflicts.includes(other.id) && !otherEvidence.conflicts.includes(candidate.id);
+    });
+    if (compatible) selected.push(candidate);
+    if (selected.length === limit) break;
+  }
+  return selected.length ? selected : ordered.slice(0, 1);
+}
+
+function governedClaims(result, requestedIds, now) {
+  if (!result || !Array.isArray(result.claims)) throw new TypeError("claim_stewardship_work must return governed claims");
+  const requested = new Set(requestedIds);
+  const seen = new Set();
+  const claims = new Map();
+  for (const claim of result.claims) {
+    const expiry = Date.parse(claim?.leaseExpiresAt);
+    if (!requested.has(claim?.workId) || seen.has(claim.workId) || typeof claim.claimId !== "string" || !claim.claimId ||
+        !Number.isFinite(expiry) || expiry <= now.getTime()) {
+      throw new TypeError("claim_stewardship_work returned an invalid claim");
+    }
+    seen.add(claim.workId);
+    claims.set(claim.workId, claim);
+  }
+  return claims;
 }
 
 /**
@@ -129,15 +183,16 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
   const { limit, active } = concurrencyState(profile);
   const available = limit - active;
   let newWorkSlots = available;
-  const selected = [];
+  const candidates = [];
   for (const work of prioritizeStewardshipWork(snapshot.work)) {
-    if (selected.length >= limit) break;
-    if (work.sessionId) selected.push(work);
+    if (work.sessionId) candidates.push(work);
     else if (newWorkSlots > 0) {
-      selected.push(work);
+      candidates.push(work);
       newWorkSlots -= 1;
     }
   }
+
+  const selected = safelyConcurrentWork(candidates, snapshot.revision, limit);
 
   if (selected.length === 0) {
     const code = snapshot.work.length > 0 && available === 0
@@ -146,15 +201,35 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
     return { status: "paused", operation: null, code, scheduled: [] };
   }
 
-  const scheduled = await Promise.all(selected.map(async (work) => {
+  let claimResult;
+  try {
+    claimResult = await client.invoke("claim_stewardship_work", {
+      revision: snapshot.revision,
+      workIds: selected.map(work => work.id),
+    });
+  } catch (error) {
+    return { status: "paused", operation: null, code: error?.code ?? "stewardship_claim_failed", scheduled: [] };
+  }
+  const claimedProfile = claimResult?.profile;
+  // The atomic claim may itself consume the last available slot. Re-check all
+  // state boundaries, but do not reject the capacity that this claim owns.
+  const claimBoundary = profileBoundary(claimedProfile, { claimId: "governed" }, now);
+  if (claimBoundary) return { status: "paused", ...claimBoundary, scheduled: [] };
+  let claims;
+  try { claims = governedClaims(claimResult, selected.map(work => work.id), now); }
+  catch { return { status: "paused", operation: null, code: "stewardship_claim_invalid", scheduled: [] }; }
+  const claimed = selected.filter(work => claims.has(work.id));
+  if (claimed.length === 0) return { status: "paused", operation: null, code: "stewardship_claim_unavailable", scheduled: [] };
+
+  const scheduled = await Promise.all(claimed.map(async (work) => {
     try {
       return { workId: work.id, ...(await runStewardshipStep({
         client,
-        profile,
-        work,
+        profile: claimedProfile,
+        work: { ...work, claimId: claims.get(work.id).claimId },
         repair: work.repair,
         now,
-      })) };
+      })), claimId: claims.get(work.id).claimId };
     } catch (error) {
       return { workId: work.id, status: "failed", code: error?.code ?? "operation_failed" };
     }
