@@ -58,6 +58,36 @@ test("expiry, kill switch, owner pause, and concurrency are evaluated before sch
   assert.equal(nextStewardshipOperation({ profile, work: { proposal, denial: { code: "stewardship_owner_approval_required" } }, now }).code, "stewardship_owner_approval_required");
 });
 
+test("protected changes pause before any governed operation", async () => {
+  const protectedProfile = { ...profile, protectedCategories: ["authority", "credentials"] };
+  for (const work of [
+    { proposal, category: "authority" },
+    { proposal, protectedChange: true },
+  ]) {
+    const calls = [];
+    const result = await runStewardshipStep({ client: { invoke: async (...args) => calls.push(args) }, profile: protectedProfile, work, now });
+    assert.equal(result.code, "stewardship_protected_change");
+    assert.deepEqual(calls, []);
+  }
+});
+
+test("runtime scheduler preserves the governed protected-category boundary", async () => {
+  const protectedProfile = { ...profile, protectedCategories: ["credentials"] };
+  const calls = [];
+  const client = { invoke: async (operation, input) => {
+    calls.push(operation);
+    if (operation === "get_stewardship_status") {
+      return { revision, profile: protectedProfile, work: [{ id: "secret", kind: "gap", category: "credentials", proposal }] };
+    }
+    if (operation === "claim_stewardship_work") return { ...claim(input.workIds), profile: protectedProfile };
+    assert.fail("protected work reached a change operation");
+  } };
+  const result = await runGovernedStewardship({ client, now });
+  assert.equal(result.status, "paused");
+  assert.equal(result.scheduled[0].code, "stewardship_protected_change");
+  assert.deepEqual(calls, ["get_stewardship_status", "claim_stewardship_work"]);
+});
+
 test("failed independent review pauses or produces an exact replacement proposal", () => {
   const work = { proposalId: "p1", sessionId: "s", previewed: true, submissionRequested: true, review: { status: "failed", findings: ["f1"] } };
   assert.equal(nextStewardshipOperation({ profile, work, now }).code, "stewardship_review_failed");
@@ -186,7 +216,27 @@ test("runtime review repair is Engine-provided and remains a replacement proposa
   } };
   const result = await runGovernedStewardship({ client, now });
   assert.equal(result.scheduled[0].operation, "propose_company_change");
-  assert.deepEqual(calls[2].input, { ...repair, supersedesProposalId: "p1" });
+  assert.deepEqual(calls[2].input, {
+    ...repair,
+    supersedesProposalId: "p1",
+    stewardshipClaim: { workId: "repair", claimId: "claim-0", leaseExpiresAt: "2026-09-01T00:05:00Z", revision },
+  });
+});
+
+test("every scheduled operation carries the Engine claim, lease, work, and snapshot revision", async () => {
+  const invocations = [];
+  const work = [{ id: "bound", kind: "gap", proposal }];
+  const client = { invoke: async (operation, input) => {
+    if (operation === "get_stewardship_status") return { revision, profile, work };
+    if (operation === "claim_stewardship_work") return claim(input.workIds);
+    invocations.push({ operation, input });
+    return { accepted: true };
+  } };
+  await runGovernedStewardship({ client, now });
+  assert.deepEqual(invocations, [{ operation: "propose_company_change", input: {
+    ...proposal,
+    stewardshipClaim: { workId: "bound", claimId: "claim-0", leaseExpiresAt: "2026-09-01T00:05:00Z", revision },
+  } }]);
 });
 
 test("simultaneous ticks use atomic Engine claims to suppress duplicates", async () => {
@@ -272,4 +322,21 @@ test("disable race returned by atomic claim prevents every scheduled operation",
   const result = await runGovernedStewardship({ client, now });
   assert.equal(result.code, "stewardship_disabled");
   assert.equal(scheduled, false);
+});
+
+test("disablement after a successful claim is enforced by the bound governed operation", async () => {
+  let operationInput;
+  const client = { invoke: async (operation, input) => {
+    if (operation === "get_stewardship_status") return { revision, profile, work: [{ id: "w", kind: "gap", proposal }] };
+    if (operation === "claim_stewardship_work") return claim(input.workIds);
+    operationInput = input;
+    throw Object.assign(new Error("disabled after claim"), { code: "stewardship_disabled" });
+  } };
+  const result = await runGovernedStewardship({ client, now });
+  assert.deepEqual(operationInput.stewardshipClaim, {
+    workId: "w", claimId: "claim-0", leaseExpiresAt: "2026-09-01T00:05:00Z", revision,
+  });
+  assert.equal(result.status, "paused");
+  assert.equal(result.scheduled[0].status, "paused");
+  assert.equal(result.scheduled[0].code, "stewardship_disabled");
 });

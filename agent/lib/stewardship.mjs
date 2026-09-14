@@ -66,6 +66,13 @@ function profileBoundary(profile, work, now) {
   const expiry = Date.parse(profile.expiresAt);
   if (!Number.isFinite(expiry) || expiry <= now.getTime()) return pause("stewardship_expired", { expiresAt: profile.expiresAt });
   if (work.denial) return pause(work.denial.code ?? "stewardship_denied", work.denial.details);
+  const protectedCategories = profile.protectedCategories ?? profile.limits?.protectedCategories ?? [];
+  if (!Array.isArray(protectedCategories) || protectedCategories.some(category => typeof category !== "string" || !category)) {
+    return pause("stewardship_protected_categories_invalid");
+  }
+  if (work.protectedChange === true || (typeof work.category === "string" && protectedCategories.includes(work.category))) {
+    return pause("stewardship_protected_change", { category: work.category });
+  }
   const concurrency = concurrencyState(profile);
   if (concurrency.boundary) return concurrency.boundary;
   if (!work.sessionId && !work.claimId && concurrency.active >= concurrency.limit) {
@@ -97,10 +104,19 @@ export function nextStewardshipOperation({ profile, work = {}, repair, now = new
   return pause("stewardship_completed", { proposalId: work.proposalId, evidence: work.evidence ?? [] });
 }
 
-export async function runStewardshipStep({ client, profile, work, repair, now = new Date() }) {
+export async function runStewardshipStep({ client, profile, work, repair, claim, revision, now = new Date() }) {
   const decision = nextStewardshipOperation({ profile, work, repair, now });
   if (!decision.operation) return { status: "paused", ...decision };
-  const result = await client.invoke(decision.operation, decision.input);
+  const input = claim ? {
+    ...decision.input,
+    stewardshipClaim: {
+      workId: work.id,
+      claimId: claim.claimId,
+      leaseExpiresAt: claim.leaseExpiresAt,
+      revision,
+    },
+  } : decision.input;
+  const result = await client.invoke(decision.operation, input);
   return { status: "scheduled", operation: decision.operation, sessionId: work?.sessionId ?? result?.sessionId, result };
 }
 
@@ -227,11 +243,14 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
         client,
         profile: claimedProfile,
         work: { ...work, claimId: claims.get(work.id).claimId },
+        claim: claims.get(work.id),
+        revision: snapshot.revision,
         repair: work.repair,
         now,
       })), claimId: claims.get(work.id).claimId };
     } catch (error) {
-      return { workId: work.id, status: "failed", code: error?.code ?? "operation_failed" };
+      const code = error?.code ?? "operation_failed";
+      return { workId: work.id, status: code.startsWith("stewardship_") ? "paused" : "failed", code };
     }
   }));
   return {
