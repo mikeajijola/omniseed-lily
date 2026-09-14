@@ -92,3 +92,65 @@ export async function runStewardshipStep({ client, profile, work, repair, now = 
   const result = await client.invoke(decision.operation, decision.input);
   return { status: "scheduled", operation: decision.operation, sessionId: work?.sessionId ?? result?.sessionId, result };
 }
+
+function governedSnapshot(result) {
+  const profile = result?.profile;
+  const work = result?.work;
+  if (!profile || !Array.isArray(work)) {
+    throw new TypeError("get_stewardship_status must return an Engine-governed profile and work array");
+  }
+  return { profile, work };
+}
+
+/**
+ * Run one durable scheduler tick.  The caller supplies no profile or work
+ * state: both are fetched from the authenticated Engine on every tick, so a
+ * resumed deployment cannot reuse stale authority or session state.
+ */
+export async function runGovernedStewardship({ client, now = new Date() }) {
+  const snapshot = governedSnapshot(await client.invoke("get_stewardship_status", {}));
+  const { profile } = snapshot;
+  const boundary = profileBoundary(profile, {}, now);
+  if (boundary && boundary.code !== "stewardship_concurrency_exhausted") {
+    return { status: "paused", ...boundary, scheduled: [] };
+  }
+
+  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork ?? 1;
+  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount ?? 0;
+  const available = Number.isInteger(limit) ? Math.max(0, limit - active) : 0;
+  let newWorkSlots = available;
+  const selected = [];
+  for (const work of prioritizeStewardshipWork(snapshot.work)) {
+    if (selected.length >= limit) break;
+    if (work.sessionId) selected.push(work);
+    else if (newWorkSlots > 0) {
+      selected.push(work);
+      newWorkSlots -= 1;
+    }
+  }
+
+  if (selected.length === 0) {
+    const code = snapshot.work.length > 0 && available === 0
+      ? "stewardship_concurrency_exhausted"
+      : "stewardship_no_work";
+    return { status: "paused", operation: null, code, scheduled: [] };
+  }
+
+  const scheduled = await Promise.all(selected.map(async (work) => {
+    try {
+      return { workId: work.id, ...(await runStewardshipStep({
+        client,
+        profile,
+        work,
+        repair: work.repair,
+        now,
+      })) };
+    } catch (error) {
+      return { workId: work.id, status: "failed", code: error?.code ?? "operation_failed" };
+    }
+  }));
+  return {
+    status: scheduled.some((item) => item.status === "scheduled") ? "scheduled" : "paused",
+    scheduled,
+  };
+}

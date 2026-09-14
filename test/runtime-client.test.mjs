@@ -103,6 +103,15 @@ test("production EVE channel has no anonymous or local-development authenticator
   assert.doesNotMatch(source, /process\.env\.LILY_SESSION_JWT_SECRET/);
 });
 
+test("durable stewardship is exposed only as an authenticated Engine scheduler trigger", async () => {
+  const source = await readFile(new URL("../agent/channels/runtime.ts", import.meta.url), "utf8");
+  assert.match(source, /POST\("\/stewardship\/tick", stewardshipTickResponse\)/);
+  assert.match(source, /OMNISEED_STEWARDSHIP_TRIGGER_CREDENTIAL_ENV/);
+  assert.match(source, /runGovernedStewardship/);
+  assert.doesNotMatch(source, /request\.json\(/);
+  assert.doesNotMatch(source, /github|provider\.mutate|approve_company_change|apply_company_change/i);
+});
+
 test("agent instructions contain no static ecosystem identity or repository facts", async () => {
   const instructions = await readFile(new URL("../agent/instructions.md", import.meta.url), "utf8");
   assert.doesNotMatch(instructions, /omniseed_ecosystem|mikeajijola\/omniseed-ecosystem-company|Lily is/);
