@@ -10,6 +10,13 @@ export const SEMANTIC_OPERATIONS = Object.freeze([
   "get_plan",
   "observe_company",
   "propose_company_change",
+  "get_stewardship_status",
+  "request_stewardship_enablement",
+  "request_stewardship_pause",
+  "request_stewardship_disablement",
+  "request_company_change_submission",
+  "request_company_change_merge",
+  "request_reconciliation",
 ]);
 
 export const EXECUTION_PROFILES = Object.freeze({

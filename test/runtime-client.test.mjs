@@ -76,6 +76,18 @@ test("Company Change preview is an ordinary read-only OmniSeed operation", async
   assert.deepEqual(JSON.parse(request.init.body).input, { proposalId: "change_1" });
 });
 
+test("stewardship transitions are authenticated Engine requests, not direct merge or apply calls", async () => {
+  let request;
+  const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
+    request = { url, init };
+    return { ok: true, json: async () => ({ ok: true, result: { accepted: true, state: "waiting_for_merge" } }) };
+  }});
+  const result = await client.invoke("request_company_change_merge", { proposalId: "change_1", sessionId: "session_1" });
+  assert.equal(result.accepted, true);
+  assert.match(request.url, /\/operations\/request_company_change_merge:invoke$/);
+  assert.deepEqual(JSON.parse(request.init.body), { input: { proposalId: "change_1", sessionId: "session_1" }, actor: { actorId: "lily", actorType: "ai" } });
+});
+
 test("engine denial is preserved and never converted into success", async () => {
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async () => ({ ok: false, json: async () => ({ ok: false, code: "authorization_denied", error: "Missing permission" }) }) });
   await assert.rejects(client.invoke("inspect_company", {}), (error) => error.code === "authorization_denied");
@@ -89,6 +101,15 @@ test("production EVE channel has no anonymous or local-development authenticator
   assert.match(source, /company_ref/);
   assert.match(source, /OMNISEED_SESSION_CREDENTIAL_ENV/);
   assert.doesNotMatch(source, /process\.env\.LILY_SESSION_JWT_SECRET/);
+});
+
+test("durable stewardship is exposed only as an authenticated Engine scheduler trigger", async () => {
+  const source = await readFile(new URL("../agent/channels/runtime.ts", import.meta.url), "utf8");
+  assert.match(source, /POST\("\/stewardship\/tick", stewardshipTickResponse\)/);
+  assert.match(source, /OMNISEED_STEWARDSHIP_TRIGGER_CREDENTIAL_ENV/);
+  assert.match(source, /runGovernedStewardship/);
+  assert.doesNotMatch(source, /request\.json\(/);
+  assert.doesNotMatch(source, /github|provider\.mutate|approve_company_change|apply_company_change/i);
 });
 
 test("agent instructions contain no static ecosystem identity or repository facts", async () => {
