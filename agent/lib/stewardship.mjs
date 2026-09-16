@@ -131,6 +131,13 @@ function governedSnapshot(result) {
   }
   const concurrency = concurrencyState(profile);
   if (concurrency.boundary) return { profile, work, revision: result.revision, activeWork: [] };
+  const workIds = work.map(item => item?.id);
+  if (workIds.some(id => typeof id !== "string" || !id) || new Set(workIds).size !== workIds.length) {
+    return {
+      profile, work, revision: result.revision, activeWork: [],
+      workBoundary: pause("stewardship_work_identity_invalid"),
+    };
+  }
   const activeWork = result.activeWork ?? [];
   if (!Array.isArray(activeWork) || activeWork.length !== concurrency.active ||
       new Set(activeWork.map(item => item?.id)).size !== activeWork.length ||
@@ -192,12 +199,16 @@ function governedClaims(result, requestedIds, expectedRevision, now) {
   if (concurrency.boundary || result.claims.length > concurrency.limit || result.claims.length > concurrency.active) {
     throw new TypeError("claim_stewardship_work returned claims outside current concurrency capacity");
   }
+  if (requestedIds.some(id => typeof id !== "string" || !id) || new Set(requestedIds).size !== requestedIds.length) {
+    throw new TypeError("claim_stewardship_work requires unique non-empty work identities");
+  }
   const requested = new Set(requestedIds);
   const seen = new Set();
   const claims = new Map();
   for (const claim of result.claims) {
     const expiry = Date.parse(claim?.leaseExpiresAt);
-    if (!requested.has(claim?.workId) || seen.has(claim.workId) || typeof claim.claimId !== "string" || !claim.claimId ||
+    if (typeof claim?.workId !== "string" || !claim.workId || !requested.has(claim.workId) || seen.has(claim.workId) ||
+        typeof claim.claimId !== "string" || !claim.claimId ||
         !Number.isFinite(expiry) || expiry <= now.getTime()) {
       throw new TypeError("claim_stewardship_work returned an invalid claim");
     }
@@ -221,6 +232,9 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
   }
   if (snapshot.activeWorkBoundary) {
     return { status: "paused", ...snapshot.activeWorkBoundary, scheduled: [] };
+  }
+  if (snapshot.workBoundary) {
+    return { status: "paused", ...snapshot.workBoundary, scheduled: [] };
   }
 
   const { limit, active } = concurrencyState(profile);

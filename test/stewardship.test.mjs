@@ -243,6 +243,24 @@ test("an active count without governed active-work identities pauses before clai
   assert.equal(claimed, false);
 });
 
+test("missing or duplicate governed work identities pause before claiming", async () => {
+  for (const work of [
+    [{ kind: "gap", proposal }],
+    [{ id: "duplicate", kind: "gap", proposal }, { id: "duplicate", kind: "drift", proposal }],
+  ]) {
+    const calls = [];
+    const client = { invoke: async (operation) => {
+      calls.push(operation);
+      if (operation === "get_stewardship_status") return { revision, profile, work };
+      assert.fail("work without a unique durable identity was claimed");
+    } };
+    const result = await runGovernedStewardship({ client, now });
+    assert.equal(result.code, "stewardship_work_identity_invalid");
+    assert.deepEqual(result.scheduled, []);
+    assert.deepEqual(calls, ["get_stewardship_status"]);
+  }
+});
+
 test("new work with current mutual evidence may run alongside identified active work", async () => {
   const evidence = independentOf => ({ revision, independent: true, dependencies: [], conflicts: [], independentOf });
   const activeProfile = { ...profile, usage: { concurrentWork: 1 } };
@@ -325,6 +343,7 @@ test("claim denial or malformed and expired leases fail closed", async () => {
   const work = [{ id: "w", kind: "gap", proposal }];
   for (const claimResponse of [
     Object.assign(new Error("denied"), { code: "claim_denied" }),
+    { revision, profile: { ...profile, usage: { concurrentWork: 1 } }, claims: [{ claimId: "c", leaseExpiresAt: "2026-09-01T00:05:00Z" }] },
     { profile, claims: [{ workId: "w", claimId: "c", leaseExpiresAt: now.toISOString() }] },
     { profile, claims: [{ workId: "other", claimId: "c", leaseExpiresAt: "2026-09-01T00:05:00Z" }] },
   ]) {
