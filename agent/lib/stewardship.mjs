@@ -129,7 +129,18 @@ function governedSnapshot(result) {
   if (typeof result.revision !== "string" || !result.revision) {
     throw new TypeError("get_stewardship_status must return a durable revision for atomic claims");
   }
-  return { profile, work, revision: result.revision };
+  const concurrency = concurrencyState(profile);
+  if (concurrency.boundary) return { profile, work, revision: result.revision, activeWork: [] };
+  const activeWork = result.activeWork ?? [];
+  if (!Array.isArray(activeWork) || activeWork.length !== concurrency.active ||
+      new Set(activeWork.map(item => item?.id)).size !== activeWork.length ||
+      activeWork.some(item => typeof item?.id !== "string" || !item.id)) {
+    return {
+      profile, work, revision: result.revision, activeWork: [],
+      activeWorkBoundary: pause("stewardship_concurrency_evidence_required", { active: concurrency.active }),
+    };
+  }
+  return { profile, work, revision: result.revision, activeWork };
 }
 
 function parallelEvidence(work, revision) {
@@ -143,27 +154,33 @@ function parallelEvidence(work, revision) {
   return evidence;
 }
 
-function safelyConcurrentWork(work, revision, limit) {
+function mutuallyIndependent(left, right, revision) {
+  const leftEvidence = parallelEvidence(left, revision);
+  const rightEvidence = parallelEvidence(right, revision);
+  return leftEvidence && rightEvidence &&
+    leftEvidence.independentOf.includes(right.id) && rightEvidence.independentOf.includes(left.id) &&
+    !leftEvidence.dependencies.includes(right.id) && !rightEvidence.dependencies.includes(left.id) &&
+    !leftEvidence.conflicts.includes(right.id) && !rightEvidence.conflicts.includes(left.id);
+}
+
+function safelyConcurrentWork(work, activeWork, revision, limit) {
   const ordered = prioritizeStewardshipWork(work);
-  if (limit <= 1 || ordered.length <= 1) return ordered.slice(0, Math.min(1, limit));
+  if (limit === 0) return [];
   const selected = [];
   for (const candidate of ordered) {
-    const evidence = parallelEvidence(candidate, revision);
-    if (!evidence) {
-      if (selected.length === 0) return [candidate];
-      continue;
-    }
-    const compatible = selected.every(other => {
-      const otherEvidence = parallelEvidence(other, revision);
-      return otherEvidence &&
-        evidence.independentOf.includes(other.id) && otherEvidence.independentOf.includes(candidate.id) &&
-        !evidence.dependencies.includes(other.id) && !otherEvidence.dependencies.includes(candidate.id) &&
-        !evidence.conflicts.includes(other.id) && !otherEvidence.conflicts.includes(candidate.id);
-    });
+    // A durable continuation may be the active work itself. Every other item
+    // needs current, mutual Engine evidence against both already-active work
+    // and work selected by this tick.
+    const concurrentWith = [
+      ...activeWork.filter(active => active.id !== candidate.id),
+      ...selected,
+    ];
+    const compatible = concurrentWith.length === 0 ||
+      concurrentWith.every(other => mutuallyIndependent(candidate, other, revision));
     if (compatible) selected.push(candidate);
     if (selected.length === limit) break;
   }
-  return selected.length ? selected : ordered.slice(0, 1);
+  return selected;
 }
 
 function governedClaims(result, requestedIds, expectedRevision, now) {
@@ -202,6 +219,9 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
   if (boundary && boundary.code !== "stewardship_concurrency_exhausted") {
     return { status: "paused", ...boundary, scheduled: [] };
   }
+  if (snapshot.activeWorkBoundary) {
+    return { status: "paused", ...snapshot.activeWorkBoundary, scheduled: [] };
+  }
 
   const { limit, active } = concurrencyState(profile);
   const available = limit - active;
@@ -215,11 +235,11 @@ export async function runGovernedStewardship({ client, now = new Date() }) {
     }
   }
 
-  const selected = safelyConcurrentWork(candidates, snapshot.revision, limit);
+  const selected = safelyConcurrentWork(candidates, snapshot.activeWork, snapshot.revision, limit);
 
   if (selected.length === 0) {
-    const code = snapshot.work.length > 0 && available === 0
-      ? "stewardship_concurrency_exhausted"
+    const code = snapshot.work.length > 0
+      ? (available === 0 ? "stewardship_concurrency_exhausted" : "stewardship_concurrency_evidence_required")
       : "stewardship_no_work";
     return { status: "paused", operation: null, code, scheduled: [] };
   }

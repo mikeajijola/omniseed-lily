@@ -143,16 +143,16 @@ test("runtime scheduler discovers authority and resumes durable state from the E
 
 test("runtime scheduler obeys Engine expiry, kill switch, owner pause, and concurrency", async () => {
   const proposalWork = [{ id: "new", kind: "gap", proposal }];
-  for (const [governedProfile, code] of [
+  for (const [governedProfile, code, activeWork = []] of [
     [{ ...profile, expiresAt: now.toISOString() }, "stewardship_expired"],
     [{ ...profile, killSwitch: true }, "stewardship_disabled"],
     [{ ...profile, state: "paused" }, "stewardship_paused"],
-    [{ ...profile, usage: { concurrentWork: 2 } }, "stewardship_concurrency_exhausted"],
+    [{ ...profile, usage: { concurrentWork: 2 } }, "stewardship_concurrency_exhausted", [{ id: "active-1" }, { id: "active-2" }]],
   ]) {
     const calls = [];
     const client = { invoke: async (operation) => {
       calls.push(operation);
-      if (operation === "get_stewardship_status") return { revision, profile: governedProfile, work: proposalWork };
+      if (operation === "get_stewardship_status") return { revision, profile: governedProfile, activeWork, work: proposalWork };
       assert.fail("scheduler crossed a governed boundary");
     } };
     const result = await runGovernedStewardship({ client, now });
@@ -206,6 +206,60 @@ test("runtime scheduler processes only mutually declared, current independent co
   assert.equal(result.scheduled.length, 2);
   assert.equal(peak, 2);
   assert.deepEqual(calls, ["propose_company_change", "propose_company_change"]);
+});
+
+test("active work requires current mutual independence evidence before new work is claimed", async () => {
+  const activeProfile = { ...profile, usage: { concurrentWork: 1 } };
+  const active = { id: "active", kind: "drift" };
+  for (const candidate of [
+    { id: "new", kind: "gap", proposal },
+    { id: "new", kind: "gap", proposal, concurrency: {
+      revision, independent: true, dependencies: [], conflicts: [], independentOf: ["active"],
+    } },
+  ]) {
+    const calls = [];
+    const client = { invoke: async (operation) => {
+      calls.push(operation);
+      if (operation === "get_stewardship_status") return { revision, profile: activeProfile, activeWork: [active], work: [candidate] };
+      assert.fail("work without mutual active-work evidence was claimed");
+    } };
+    const result = await runGovernedStewardship({ client, now });
+    assert.equal(result.code, "stewardship_concurrency_evidence_required");
+    assert.deepEqual(calls, ["get_stewardship_status"]);
+  }
+});
+
+test("an active count without governed active-work identities pauses before claiming", async () => {
+  let claimed = false;
+  const client = { invoke: async (operation) => {
+    if (operation === "get_stewardship_status") return {
+      revision, profile: { ...profile, usage: { concurrentWork: 1 } }, work: [{ id: "new", kind: "gap", proposal }],
+    };
+    claimed = true;
+  } };
+  const result = await runGovernedStewardship({ client, now });
+  assert.equal(result.code, "stewardship_concurrency_evidence_required");
+  assert.deepEqual(result.scheduled, []);
+  assert.equal(claimed, false);
+});
+
+test("new work with current mutual evidence may run alongside identified active work", async () => {
+  const evidence = independentOf => ({ revision, independent: true, dependencies: [], conflicts: [], independentOf });
+  const activeProfile = { ...profile, usage: { concurrentWork: 1 } };
+  const activeWork = [{ id: "active", kind: "drift", concurrency: evidence(["new"]) }];
+  const work = [{ id: "new", kind: "gap", proposal, concurrency: evidence(["active"]) }];
+  const claimed = [];
+  const client = { invoke: async (operation, input) => {
+    if (operation === "get_stewardship_status") return { revision, profile: activeProfile, activeWork, work };
+    if (operation === "claim_stewardship_work") {
+      claimed.push(...input.workIds);
+      return { ...claim(input.workIds), profile: { ...profile, usage: { concurrentWork: 2 } } };
+    }
+    return { accepted: true };
+  } };
+  const result = await runGovernedStewardship({ client, now });
+  assert.equal(result.status, "scheduled");
+  assert.deepEqual(claimed, ["new"]);
 });
 
 test("runtime review repair is Engine-provided and remains a replacement proposal", async () => {
