@@ -79,6 +79,9 @@ test("Company Change preview is an ordinary read-only OmniSeed operation", async
 test("stewardship transitions are authenticated Engine requests, not direct merge or apply calls", async () => {
   let request;
   const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async (url, init) => {
+    if (url.endsWith("/inspect_company:invoke")) return { ok: true, json: async () => ({ result: {
+      operations: [{ id: "request_company_change_merge", implemented: true, currentAvailability: "available" }],
+    } }) };
     request = { url, init };
     return { ok: true, json: async () => ({ ok: true, result: { accepted: true, state: "waiting_for_merge" } }) };
   }});
@@ -86,6 +89,31 @@ test("stewardship transitions are authenticated Engine requests, not direct merg
   assert.equal(result.accepted, true);
   assert.match(request.url, /\/operations\/request_company_change_merge:invoke$/);
   assert.deepEqual(JSON.parse(request.init.body), { input: { proposalId: "change_1", sessionId: "session_1" }, actor: { actorId: "lily", actorType: "ai" } });
+});
+
+test("undeclared stewardship requests stop at company inspection", async () => {
+  for (const operation of [undefined, { id: "request_company_change_merge", implemented: false, currentAvailability: "unimplemented" }, { id: "request_company_change_merge", implemented: true, currentAvailability: "provider_unavailable" }]) {
+    const calls = [];
+    const client = new OmniSeedOperationClient({ bootstrap: loadBootstrap(env), fetchImpl: async url => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ result: { operations: operation ? [operation] : [] } }) };
+    } });
+    await assert.rejects(client.invoke("request_company_change_merge", {}), error => error.code === "operation_unavailable");
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /inspect_company:invoke$/);
+  }
+});
+
+test("company priorities are projected from Engine desired state without copying raw definition", () => {
+  const projection = projectCompanyInspection({ definition: { spec: {
+    intent: "Operate truthfully", outcomes: [{ id: "truth", description: "Observed results", internal: "omit" }],
+    resources: { private: "omit" },
+  } } });
+  assert.equal(projection.intent, "Operate truthfully");
+  assert.deepEqual(projection.outcomes, [{ id: "truth", description: "Observed results" }]);
+  assert.doesNotMatch(JSON.stringify(projection), /omit/);
+  assert.equal(projectCompanyInspection({}).intent, null);
+  assert.deepEqual(projectCompanyInspection({}).outcomes, []);
 });
 
 test("engine denial is preserved and never converted into success", async () => {

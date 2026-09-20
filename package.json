@@ -20,5 +20,8 @@
   ],
   "engines": {
     "node": ">=24"
+  },
+  "devDependencies": {
+    "@omniseed/engine": "1.0.0-alpha.21"
   }
 }
