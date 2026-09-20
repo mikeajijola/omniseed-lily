@@ -7,6 +7,11 @@ export function projectCompanyInspection(registry) {
   return {
     company: registry.company,
     instance: registry.instance,
+    intent: registry.definition?.spec?.intent ?? null,
+    outcomes: (registry.definition?.spec?.outcomes ?? []).map(outcome => ({
+      id: outcome.id,
+      description: outcome.description,
+    })),
     stewardship: {
       capability: compactCapability(registry.stewardship?.capability),
       realisation: compactRealisation(registry.stewardship?.realisation),

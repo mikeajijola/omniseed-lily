@@ -10,7 +10,7 @@ export const SEMANTIC_OPERATIONS = Object.freeze([
   "get_plan",
   "observe_company",
   "propose_company_change",
-  "get_stewardship_status",
+  "inspect_stewardship",
   "request_stewardship_enablement",
   "request_stewardship_pause",
   "request_stewardship_disablement",

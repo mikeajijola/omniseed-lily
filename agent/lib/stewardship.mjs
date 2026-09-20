@@ -2,7 +2,7 @@ const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 
 const CONTROL_OPERATIONS = Object.freeze({
-  status: "get_stewardship_status",
+  status: "inspect_stewardship",
   enable: "request_stewardship_enablement",
   pause: "request_stewardship_pause",
   disable: "request_stewardship_disablement",
@@ -50,8 +50,8 @@ function pause(code, details) {
 }
 
 function concurrencyState(profile) {
-  const limit = profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork;
-  const active = profile.usage?.concurrentWork ?? profile.activeWorkCount;
+  const limit = profile.limits?.concurrency ?? profile.limits?.maxConcurrentWork ?? profile.maxConcurrentWork;
+  const active = profile.usage?.active ?? profile.usage?.concurrentWork ?? profile.activeWorkCount;
   if (!Number.isInteger(limit) || limit < 0 || !Number.isInteger(active) || active < 0 || active > limit) {
     return { boundary: pause("stewardship_concurrency_invalid", { active, limit }) };
   }
@@ -124,10 +124,10 @@ function governedSnapshot(result) {
   const profile = result?.profile;
   const work = result?.work;
   if (!profile || !Array.isArray(work)) {
-    throw new TypeError("get_stewardship_status must return an Engine-governed profile and work array");
+    throw new TypeError("inspect_stewardship must return an Engine-governed profile and work array");
   }
   if (typeof result.revision !== "string" || !result.revision) {
-    throw new TypeError("get_stewardship_status must return a durable revision for atomic claims");
+    throw new TypeError("inspect_stewardship must return a durable revision for atomic claims");
   }
   const concurrency = concurrencyState(profile);
   if (concurrency.boundary) return { profile, work, revision: result.revision, activeWork: [] };
@@ -224,7 +224,14 @@ function governedClaims(result, requestedIds, expectedRevision, now) {
  * resumed deployment cannot reuse stale authority or session state.
  */
 export async function runGovernedStewardship({ client, now = new Date() }) {
-  const snapshot = governedSnapshot(await client.invoke("get_stewardship_status", {}));
+  const status = await client.invoke("inspect_stewardship", {});
+  // The published Engine returns its effective profile, not a durable queue.
+  // Never synthesize work, claims, or a revision from that read-only profile.
+  if (!status?.profile || !Array.isArray(status.work) || !status.revision) {
+    const boundary = profileBoundary(status, {}, now);
+    return { status: "paused", ...(boundary ?? pause("stewardship_scheduler_unavailable")), scheduled: [] };
+  }
+  const snapshot = governedSnapshot(status);
   const { profile } = snapshot;
   const boundary = profileBoundary(profile, {}, now);
   if (boundary && boundary.code !== "stewardship_concurrency_exhausted") {

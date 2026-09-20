@@ -10,7 +10,7 @@ const OPERATION_IDS = new Set([
   "generate_plan",
   "get_plan",
   "observe_company",
-  "get_stewardship_status",
+  "inspect_stewardship",
   "claim_stewardship_work",
   "request_stewardship_enablement",
   "request_stewardship_pause",
@@ -18,6 +18,12 @@ const OPERATION_IDS = new Set([
   "request_company_change_submission",
   "request_company_change_merge",
   "request_reconciliation",
+]);
+
+const DISCOVERED_REQUESTS = new Set([
+  "claim_stewardship_work", "request_stewardship_enablement", "request_stewardship_pause",
+  "request_stewardship_disablement", "request_company_change_submission",
+  "request_company_change_merge", "request_reconciliation",
 ]);
 
 export class OmniSeedClientError extends Error {
@@ -67,6 +73,13 @@ export class OmniSeedOperationClient {
     }
     if (operationId === "propose_company_change" && isSelfEscalation(input, this.bootstrap.identity)) {
       throw new OmniSeedClientError("self_escalation_denied", "Lily cannot propose a change that grants or expands her own authority");
+    }
+    if (DISCOVERED_REQUESTS.has(operationId)) {
+      const company = await this.invoke("inspect_company", {});
+      const operation = company.operations?.find(item => item.id === operationId);
+      if (operation?.implemented !== true || operation?.currentAvailability !== "available") {
+        throw new OmniSeedClientError("operation_unavailable", "The company has no available governed handler for this stewardship request", { operationId });
+      }
     }
     const url = `${this.bootstrap.endpoint}/v1/companies/${encodeURIComponent(this.bootstrap.companyRef)}/operations/${encodeURIComponent(operationId)}:invoke`;
     const response = await this.fetchImpl(url, {
