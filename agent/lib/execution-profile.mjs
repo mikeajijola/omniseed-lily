@@ -38,7 +38,9 @@ export function executionProfileFor(text = "") {
 export function turnGuard(messages = [], operationId) {
   const lastUser = messages.findLastIndex(message => message?.role === "user");
   const profile = lastUser < 0 ? EXECUTION_PROFILES.empty_turn : executionProfileFor(messageText(messages[lastUser]));
-  const governedCalls = lastUser < 0 ? 0 : messages.slice(lastUser + 1).filter(message => message?.role === "tool").reduce((count, message) => count + (Array.isArray(message.content) ? Math.max(1, message.content.length) : 1), 0);
+  // The authenticated channel spends one read refreshing current Company facts.
+  const contextReads = profile.name === "semantic_turn" ? 1 : 0;
+  const governedCalls = lastUser < 0 ? 0 : messages.slice(lastUser + 1).filter(message => message?.role === "tool").reduce((count, message) => count + (Array.isArray(message.content) ? Math.max(1, message.content.length) : 1), contextReads);
   const operationAllowed = profile.operations.includes(operationId);
   return Object.freeze({ profile: profile.name, limit: profile.governedToolLimit, governedCalls, remaining: Math.max(0, profile.governedToolLimit - governedCalls), allowed: operationAllowed && governedCalls < profile.governedToolLimit });
 }

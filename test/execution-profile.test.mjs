@@ -37,7 +37,7 @@ test("greetings can never access apply, merge, approval, Provider, or authority 
 test("multi-step inspection and proposal remains possible within the semantic bound", () => {
   const messages = [user("Could you understand the situation and suggest the evidenced correction?"), tool("inspect_company"), tool("get_capability"), tool("inspect_realisation"), tool("propose_company_change"), tool("preview_company_change")];
   assert.deepEqual(turnGuard(messages, "inspect_company_change"), {
-    profile: "semantic_turn", limit: 8, governedCalls: 5, remaining: 3, allowed: true,
+    profile: "semantic_turn", limit: 8, governedCalls: 6, remaining: 2, allowed: true,
   });
   assert.equal(turnGuard(messages, "propose_company_change").allowed, true);
   assert.equal(turnGuard([...messages, tool("list_activity"), tool("get_plan"), tool("observe_company")], "inspect_company").allowed, false);
@@ -45,7 +45,7 @@ test("multi-step inspection and proposal remains possible within the semantic bo
 
 test("a later non-empty user turn gets a fresh semantic bound", () => {
   const messages = [user("Take a look."), ...Array.from({ length: 8 }, () => tool("inspect_company")), user("And what follows from that?")];
-  assert.equal(turnGuard(messages, "inspect_provider_binding").governedCalls, 0);
+  assert.equal(turnGuard(messages, "inspect_provider_binding").governedCalls, 1);
   assert.equal(turnGuard(messages, "inspect_provider_binding").allowed, true);
 });
 
